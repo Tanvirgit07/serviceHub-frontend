@@ -1,10 +1,9 @@
 import React from 'react'
-import VerifyEmailForm from './_components/VerifyEmailForm'
 
-function page() {
+const page = () => {
   return (
     <div>
-        <VerifyEmailForm />
+      page
     </div>
   )
 }

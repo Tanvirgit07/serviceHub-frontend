@@ -1,10 +1,9 @@
 import React from 'react'
-import SigninForm from './_components/SigninForm'
 
-function page() {
+const page = () => {
   return (
     <div>
-        <SigninForm />
+      page
     </div>
   )
 }

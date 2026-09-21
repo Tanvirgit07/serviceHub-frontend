@@ -1,10 +1,9 @@
 import React from 'react'
-import ForgotPasswordForm from './_components/ForgotPasswordForm'
 
-function page() {
+const page = () => {
   return (
     <div>
-        <ForgotPasswordForm />
+      page
     </div>
   )
 }
