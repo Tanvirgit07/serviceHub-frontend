@@ -17,7 +17,7 @@ import {
   createStoredService,
 } from "@/data/servicesData";
 
-export default function CreateServicePage() {
+export default function CreateService() {
   const router = useRouter();
 
   const [title, setTitle] = useState("");
@@ -86,7 +86,7 @@ export default function CreateServicePage() {
         {/* Breadcrumb & Navigation */}
         <div className="flex items-center justify-between">
           <Button asChild variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
-            <Link href="/provider/services">
+            <Link href="/provider/p_services">
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to Services
             </Link>

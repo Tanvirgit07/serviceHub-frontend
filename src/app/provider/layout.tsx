@@ -1,9 +1,11 @@
 import React from "react";
-import Link from "next/link";
-import Navbar from "@/components/shared/Navbar";
-import Footer from "@/components/shared/Footer";
-import { PlusCircle, LayoutDashboard, ListOrdered } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import Sidebar, { SidebarProvider } from "@/components/shared/Sidebar";
+import Header from "@/components/shared/Header";
+
+export const metadata = {
+  title: "Provider Dashboard - ServiceHub",
+  description: "Manage your services, bookings, ratings, and customer requests.",
+};
 
 export default function ProviderLayout({
   children,
@@ -11,47 +13,25 @@ export default function ProviderLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex flex-col bg-muted/20">
-      <Navbar />
+    <SidebarProvider>
+      <div className="min-h-screen flex bg-muted/20 text-foreground">
+        {/* Left Sticky Desktop & Mobile Drawer Sidebar */}
+        <Sidebar />
 
-      {/* Provider Sub-navigation Bar */}
-      <div className="border-b border-border/60 bg-card">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl flex flex-wrap items-center justify-between py-3 gap-3">
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs font-bold">
-              PRO
-            </span>
-            <span className="text-sm font-bold text-foreground">
-              Provider Management
-            </span>
-          </div>
+        {/* Right Content Area: Sticky Header + Page Content */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Top Sticky Header */}
+          <Header
+            title="Provider Portal"
+            subtitle="Manage services, bookings & earnings"
+          />
 
-          <div className="flex items-center gap-2">
-            <Button asChild variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
-              <Link href="/provider/services">
-                <ListOrdered className="h-3.5 w-3.5" />
-                My Services
-              </Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
-              <Link href="/provider/dashboard">
-                <LayoutDashboard className="h-3.5 w-3.5" />
-                Dashboard
-              </Link>
-            </Button>
-            <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
-              <Link href="/provider/services/create">
-                <PlusCircle className="h-3.5 w-3.5" />
-                Add New Service
-              </Link>
-            </Button>
-          </div>
+          {/* Dynamic Page Content */}
+          <main className="flex-1">
+            {children}
+          </main>
         </div>
       </div>
-
-      <main className="flex-1">{children}</main>
-      <Footer />
-    </div>
+    </SidebarProvider>
   );
 }
-

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Save,
@@ -16,14 +16,28 @@ import {
   CATEGORIES,
   Service,
   getStoredServiceById,
+  getStoredServices,
   updateStoredService,
   INITIAL_SERVICES,
 } from "@/data/servicesData";
 
-export default function EditServicePage() {
+interface EditServiceProps {
+  serviceId?: string;
+}
+
+export default function EditService({ serviceId: propId }: EditServiceProps) {
   const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
-  const serviceId = params?.serviceId as string;
+
+  // Extract ID from prop, query (?id= or ?serviceId=), or dynamic params ([id] or [serviceId])
+  const resolvedId =
+    propId ||
+    searchParams?.get("id") ||
+    searchParams?.get("serviceId") ||
+    (params?.id as string) ||
+    (params?.serviceId as string) ||
+    "";
 
   const [isLoading, setIsLoading] = useState(true);
   const [service, setService] = useState<Service | null>(null);
@@ -40,10 +54,20 @@ export default function EditServicePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (serviceId) {
+    let targetId = resolvedId;
+
+    // If no ID in URL, fallback to first available service
+    if (!targetId) {
+      const allServices = getStoredServices();
+      if (allServices.length > 0) {
+        targetId = allServices[0].id;
+      }
+    }
+
+    if (targetId) {
       const found =
-        getStoredServiceById(serviceId) ||
-        INITIAL_SERVICES.find((s) => s.id === serviceId) ||
+        getStoredServiceById(targetId) ||
+        INITIAL_SERVICES.find((s) => s.id === targetId) ||
         null;
 
       if (found) {
@@ -58,9 +82,10 @@ export default function EditServicePage() {
         setExclusions(found.exclusions.join(", "));
         setFeatures(found.features.join(", "));
       }
-      setIsLoading(false);
     }
-  }, [serviceId]);
+
+    setIsLoading(false);
+  }, [resolvedId]);
 
   if (isLoading) {
     return (
@@ -75,10 +100,10 @@ export default function EditServicePage() {
       <div className="min-h-[50vh] flex flex-col items-center justify-center p-8 text-center space-y-4">
         <h2 className="text-xl font-bold text-foreground">Service Not Found</h2>
         <p className="text-sm text-muted-foreground">
-          The service you are trying to edit does not exist.
+          The service you are trying to edit could not be located in your catalog.
         </p>
         <Button asChild>
-          <Link href="/provider/services">Return to Services</Link>
+          <Link href="/provider/p_services">Return to Services</Link>
         </Button>
       </div>
     );
@@ -109,7 +134,7 @@ export default function EditServicePage() {
 
       if (updated) {
         toast.success(`"${updated.title}" updated successfully!`);
-        router.push("/provider/services");
+        router.push("/provider/p_services");
       } else {
         toast.error("Failed to update service.");
       }
@@ -121,13 +146,13 @@ export default function EditServicePage() {
   };
 
   return (
-    <div className="py-8 sm:py-12">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl space-y-6">
+    <div className="p-6">
+      <div className="mx-auto max-w-4xl space-y-6">
         
         {/* Breadcrumb & Navigation */}
         <div className="flex items-center justify-between">
           <Button asChild variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
-            <Link href="/provider/services">
+            <Link href="/provider/p_services">
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to Services
             </Link>
@@ -296,7 +321,7 @@ export default function EditServicePage() {
             {/* Buttons */}
             <div className="pt-4 border-t border-border/60 flex items-center justify-end gap-3">
               <Button asChild variant="outline">
-                <Link href="/provider/services">Cancel</Link>
+                <Link href="/provider/p_services">Cancel</Link>
               </Button>
               <Button type="submit" disabled={isSubmitting} className="h-10 px-6 gap-2">
                 {isSubmitting ? (

@@ -1,9 +1,12 @@
 import React from "react";
+import AboutPage from "./_components/AboutPage";
 
-export default function AboutPage() {
-  return (
-    <div className="container mx-auto px-4 py-12">
-      <h1 className="text-3xl font-bold">About Us</h1>
-    </div>
-  );
+export const metadata = {
+  title: "About Us - ServiceHub",
+  description: "Learn more about ServiceHub, our mission, values, and verified service community",
+};
+
+export default function Page() {
+  return <AboutPage />;
 }
+
