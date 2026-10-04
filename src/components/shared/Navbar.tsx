@@ -3,7 +3,8 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { useLogout } from "@/features/auth/hooks/useAuth";
 import {
   Wrench,
   Menu,
@@ -33,11 +34,12 @@ const NAV_LINKS = [
 export default function Navbar() {
   const pathname = usePathname();
   const { data: session, status } = useSession();
+  const { logout } = useLogout();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isAuthenticated = status === "authenticated";
   const user = session?.user;
-  const isProvider = user?.role === "provider";
+  const isProvider = user?.role?.toUpperCase() === "PROVIDER";
 
   const getInitials = (name?: string | null) => {
     if (!name) return "U";
@@ -116,7 +118,7 @@ export default function Navbar() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => signOut({ callbackUrl: "/" })}
+                  onClick={() => logout("/")}
                   title="Sign out"
                   className="h-8 w-8 text-muted-foreground hover:text-destructive"
                 >
@@ -229,7 +231,7 @@ export default function Navbar() {
                     <Button
                       variant="destructive"
                       className="w-full justify-start gap-2"
-                      onClick={() => signOut({ callbackUrl: "/" })}
+                      onClick={() => logout("/")}
                     >
                       <LogOut className="h-4 w-4" />
                       Sign Out

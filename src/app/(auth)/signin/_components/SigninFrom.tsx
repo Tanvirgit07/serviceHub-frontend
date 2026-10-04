@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
+import { signIn, getSession } from "next-auth/react";
 import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ export default function SigninFrom() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
+    if (!email.trim() || !password) {
       toast.error("Please fill in all fields");
       return;
     }
@@ -26,7 +26,7 @@ export default function SigninFrom() {
     try {
       setIsLoading(true);
       const res = await signIn("credentials", {
-        email,
+        email: email.trim(),
         password,
         redirect: false,
       });
@@ -35,7 +35,16 @@ export default function SigninFrom() {
         toast.error(res.error || "Invalid credentials. Please try again.");
       } else {
         toast.success("Signed in successfully!");
-        router.push("/");
+
+        // Check role and redirect to dashboard or home
+        const session = await getSession();
+        const role = session?.user?.role;
+
+        if (role === "PROVIDER") {
+          router.push("/provider/dashboard");
+        } else {
+          router.push("/");
+        }
         router.refresh();
       }
     } catch {

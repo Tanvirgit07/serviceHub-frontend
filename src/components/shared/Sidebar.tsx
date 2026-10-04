@@ -3,7 +3,8 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { useLogout } from "@/features/auth/hooks/useAuth";
 import {
   Wrench,
   LayoutDashboard,
@@ -166,6 +167,7 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { logout } = useLogout();
   const context = useSidebar();
 
   // Internal state fallback if used without Provider or controlled props
@@ -372,7 +374,7 @@ export default function Sidebar({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => signOut({ callbackUrl: "/signin" })}
+              onClick={() => logout("/signin")}
               className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
               title="Sign Out"
             >
@@ -406,7 +408,7 @@ export default function Sidebar({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => signOut({ callbackUrl: "/signin" })}
+              onClick={() => logout("/signin")}
               className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg shrink-0 ml-1"
               title="Sign Out"
             >

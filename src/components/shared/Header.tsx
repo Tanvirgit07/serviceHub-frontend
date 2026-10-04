@@ -2,7 +2,8 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { useLogout } from "@/features/auth/hooks/useAuth";
 import {
   Menu,
   Bell,
@@ -70,6 +71,7 @@ export default function Header({
   showSearch = true,
 }: HeaderProps) {
   const { data: session } = useSession();
+  const { logout } = useLogout();
   const sidebarContext = useSidebar();
 
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -347,7 +349,7 @@ export default function Header({
 
               <div className="border-t border-border/60 mt-1 pt-1">
                 <button
-                  onClick={() => signOut({ callbackUrl: "/signin" })}
+                  onClick={() => logout("/signin")}
                   className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-destructive hover:bg-destructive/10 transition-colors font-medium"
                 >
                   <LogOut className="h-3.5 w-3.5" />

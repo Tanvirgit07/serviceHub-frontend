@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   User,
   Mail,
@@ -18,18 +17,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { useSignup } from "@/features/auth/hooks/useAuth";
 
 export default function SignupFrom() {
-  const router = useRouter();
   const [role, setRole] = useState<"CUSTOMER" | "PROVIDER">("CUSTOMER");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const { mutate: signup, isPending } = useSignup();
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!name.trim() || !email.trim() || !password) {
@@ -47,40 +47,12 @@ export default function SignupFrom() {
       return;
     }
 
-    try {
-      setIsLoading(true);
-      const apiUrl =
-        process.env.NEXT_PUBLIC_BACKEND_API_URL ||
-        "http://localhost:5000/api/v1";
-
-      const res = await fetch(`${apiUrl}/auth/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim(),
-          password,
-          role,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || !data?.status) {
-        throw new Error(data?.message || "Registration failed. Please try again.");
-      }
-
-      toast.success("Account created successfully! Please sign in.");
-      router.push("/signin");
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "An unexpected error occurred during signup.";
-      toast.error(msg);
-    } finally {
-      setIsLoading(false);
-    }
+    signup({
+      name: name.trim(),
+      email: email.trim(),
+      password,
+      role,
+    });
   };
 
   return (
@@ -153,7 +125,7 @@ export default function SignupFrom() {
                 onChange={(e) => setName(e.target.value)}
                 required
                 className="h-11 pl-10 pr-4 text-sm"
-                disabled={isLoading}
+                disabled={isPending}
               />
             </div>
           </div>
@@ -176,7 +148,7 @@ export default function SignupFrom() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="h-11 pl-10 pr-4 text-sm"
-                disabled={isLoading}
+                disabled={isPending}
               />
             </div>
           </div>
@@ -199,7 +171,7 @@ export default function SignupFrom() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="h-11 pl-10 pr-10 text-sm"
-                disabled={isLoading}
+                disabled={isPending}
               />
               <button
                 type="button"
@@ -235,7 +207,7 @@ export default function SignupFrom() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 className="h-11 pl-10 pr-4 text-sm"
-                disabled={isLoading}
+                disabled={isPending}
               />
             </div>
           </div>
@@ -244,9 +216,9 @@ export default function SignupFrom() {
           <Button
             type="submit"
             className="w-full h-11 text-sm font-medium mt-3"
-            disabled={isLoading}
+            disabled={isPending}
           >
-            {isLoading ? (
+            {isPending ? (
               <span className="flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Creating Account...
