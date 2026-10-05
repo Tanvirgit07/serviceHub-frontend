@@ -1,27 +1,23 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Pencil,
   Trash2,
-  Star,
-  CheckCircle2,
-  XCircle,
-  ExternalLink,
-  Sparkles,
   Calendar,
   AlertCircle,
-  ShieldCheck,
-  Award,
-  Users,
-  Check,
-  X,
+  Briefcase,
+  DollarSign,
+  Clock,
+  Loader2,
+  FileText,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -30,15 +26,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
 import {
-  getStoredServiceById,
-  updateStoredService,
-  deleteStoredService,
-  Service,
-  INITIAL_SERVICES,
-} from "@/data/servicesData";
-import { getStoredOrders, OrderItem } from "@/data/ordersData";
+  useServiceDetails,
+  useDeleteService,
+  useToggleAvailability,
+} from "@/features/services/hook/useServices";
 
 interface ServiceDetailsProps {
   serviceId?: string;
@@ -49,47 +41,57 @@ export default function ServiceDetails({ serviceId: propId }: ServiceDetailsProp
   const router = useRouter();
 
   // Support route params [serviceId] or [id] or direct prop
-  const effectiveId =
-    propId ||
-    (params?.serviceId as string) ||
-    (params?.id as string) ||
-    "ac-servicing-master";
+  const resolvedId =
+    (propId ||
+      (params?.serviceId as string) ||
+      (params?.id as string) ||
+      "") as string;
 
-  const [service, setService] = useState<Service | null>(null);
-  const [orders, setOrders] = useState<OrderItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: service, isLoading, isError, error } = useServiceDetails(resolvedId);
+  const { mutate: deleteService, isPending: isDeleting } = useDeleteService();
+  const { mutate: toggleAvailability, isPending: isToggling } = useToggleAvailability();
+
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
 
-  useEffect(() => {
-    const found = getStoredServiceById(effectiveId);
-    if (found) {
-      setService(found);
-    } else {
-      // Fallback to first available initial service
-      setService(INITIAL_SERVICES[0] || null);
-    }
+  // Toggle availability
+  const handleToggleAvailability = () => {
+    if (!service) return;
+    toggleAvailability({
+      id: service.id,
+      availability: !service.availability,
+    });
+  };
 
-    const allOrders = getStoredOrders();
-    setOrders(allOrders);
-    setIsLoading(false);
-  }, [effectiveId]);
+  // Delete service
+  const confirmDelete = () => {
+    if (!service) return;
+    deleteService(service.id, {
+      onSuccess: () => {
+        setDeleteModalOpen(false);
+        router.push("/provider/p_services");
+      },
+    });
+  };
 
   if (isLoading) {
     return (
-      <div className="py-20 text-center space-y-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto" />
+      <div className="min-h-[50vh] flex flex-col items-center justify-center gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <p className="text-xs text-muted-foreground">Loading service details...</p>
       </div>
     );
   }
 
-  if (!service) {
+  if (isError || !service) {
     return (
-      <div className="py-20 text-center space-y-4">
+      <div className="min-h-[50vh] flex flex-col items-center justify-center p-8 text-center space-y-4">
+        <div className="p-3 rounded-full bg-destructive/10 text-destructive">
+          <AlertCircle className="h-6 w-6" />
+        </div>
         <h2 className="text-xl font-bold text-foreground">Service Not Found</h2>
-        <p className="text-xs text-muted-foreground">
-          The requested service offering could not be located in your catalog.
+        <p className="text-sm text-muted-foreground max-w-md">
+          {error?.message ||
+            "The requested service offering could not be located in your catalog."}
         </p>
         <Button asChild size="sm">
           <Link href="/provider/p_services">Back to Services</Link>
@@ -98,98 +100,84 @@ export default function ServiceDetails({ serviceId: propId }: ServiceDetailsProp
     );
   }
 
-  // Toggle availability
-  const handleToggleAvailability = () => {
-    const updated = updateStoredService(service.id, {
-      availability: !service.availability,
-    });
-    if (updated) {
-      setService((prev) => (prev ? { ...prev, availability: !prev.availability } : null));
-      toast.success(
-        `Service status is now ${!service.availability ? "Active (Online)" : "Paused (Offline)"}`
-      );
-    }
-  };
+  const formattedPrice = Number(service.price).toFixed(2);
+  const formattedCreateDate = service.createAt
+    ? new Date(service.createAt).toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "Recently";
 
-  // Delete service
-  const confirmDelete = () => {
-    setIsDeleting(true);
-    const success = deleteStoredService(service.id);
-    if (success) {
-      toast.success(`"${service.title}" has been deleted.`);
-      router.push("/provider/p_services");
-    } else {
-      toast.error("Failed to delete service.");
-      setIsDeleting(false);
-    }
-  };
-
-  // Related orders for this service
-  const serviceOrders = orders.filter(
-    (o) => o.serviceId === service.id || o.category === service.category
-  );
+  const formattedUpdateDate = service.updatedAt
+    ? new Date(service.updatedAt).toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
 
   return (
     <div className="p-6">
-      <div className="mx-auto max-w-6xl space-y-8">
+      <div className="mx-auto max-w-5xl space-y-8">
         
         {/* Navigation Breadcrumb & Actions Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5">
-          <div className="flex items-center gap-3">
-            <Button asChild variant="outline" size="sm" className="h-9 gap-1.5 text-xs rounded-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/60">
+          <div className="flex items-center gap-2.5">
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs rounded-xl"
+            >
               <Link href="/provider/p_services">
                 <ArrowLeft className="h-3.5 w-3.5" />
                 <span>All Services</span>
               </Link>
             </Button>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>/</span>
-              <span className="font-semibold text-foreground truncate max-w-xs">
-                {service.title}
-              </span>
-            </div>
+            <span className="text-xs text-muted-foreground">/</span>
+            <span className="text-xs font-semibold text-foreground truncate max-w-xs">
+              {service.title}
+            </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Availability Toggle */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Quick Availability Toggle */}
             <button
               onClick={handleToggleAvailability}
+              disabled={isToggling}
               className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-2xs border transition-all ${
                 service.availability
                   ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
                   : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
               }`}
             >
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  service.availability ? "bg-emerald-500" : "bg-zinc-400"
-                }`}
-              />
+              {isToggling ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    service.availability ? "bg-emerald-500" : "bg-zinc-400"
+                  }`}
+                />
+              )}
               <span>{service.availability ? "Active & Accepting Bookings" : "Paused / Offline"}</span>
             </button>
 
-            {/* Public View */}
-            <Button asChild variant="outline" size="sm" className="h-9 gap-1 text-xs rounded-xl">
-              <Link href={`/services/${service.id}`} target="_blank">
-                <ExternalLink className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Public Page</span>
-              </Link>
-            </Button>
-
-            {/* Edit */}
-            <Button asChild size="sm" className="h-9 gap-1.5 text-xs rounded-xl shadow-xs">
+            {/* Edit Button */}
+            <Button asChild size="sm" className="h-8 gap-1.5 text-xs rounded-xl shadow-xs">
               <Link href={`/provider/p_services/edit/${service.id}`}>
                 <Pencil className="h-3.5 w-3.5" />
-                <span>Edit Offering</span>
+                <span>Edit Service</span>
               </Link>
             </Button>
 
-            {/* Delete */}
+            {/* Delete Button */}
             <Button
               variant="outline"
               size="icon"
               onClick={() => setDeleteModalOpen(true)}
-              className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
               title="Delete service"
             >
               <Trash2 className="h-4 w-4" />
@@ -197,257 +185,128 @@ export default function ServiceDetails({ serviceId: propId }: ServiceDetailsProp
           </div>
         </div>
 
-        {/* Hero Details Card */}
-        <div className="rounded-3xl border border-border/80 bg-card p-6 sm:p-8 shadow-xs">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            
-            {/* Image Preview (5 cols) */}
-            <div className="lg:col-span-5 space-y-3">
-              <div className="relative h-64 sm:h-72 w-full overflow-hidden rounded-2xl border border-border/80 bg-muted">
-                <Image
-                  src={service.imageUrl}
-                  alt={service.title}
-                  fill
-                  priority
-                  className="object-cover"
-                />
-                <span className="absolute top-3 left-3 rounded-lg bg-background/95 backdrop-blur-xs px-3 py-1 text-xs font-bold text-foreground shadow-xs">
-                  {service.category}
-                </span>
-                <span className="absolute bottom-3 left-3 rounded-lg bg-background/95 backdrop-blur-xs px-3 py-1 text-xs font-bold text-primary shadow-xs">
-                  ${service.price} Upfront Rate
-                </span>
+        {/* Hero Card */}
+        <Card className="border-border/80 shadow-sm overflow-hidden">
+          <div className="bg-gradient-to-br from-primary/10 via-muted/40 to-card p-6 sm:p-8 border-b border-border/60">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
+              <div className="flex items-start gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-primary/20 bg-background/80 text-primary shadow-xs">
+                  <Briefcase className="h-7 w-7" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                        service.availability
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                          : "bg-muted text-muted-foreground border border-border"
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          service.availability ? "bg-emerald-500" : "bg-muted-foreground"
+                        }`}
+                      />
+                      {service.availability ? "Active" : "Paused"}
+                    </span>
+
+                    <span className="text-xs font-mono text-muted-foreground bg-muted/70 px-2 py-0.5 rounded border border-border">
+                      ID: {service.id}
+                    </span>
+                  </div>
+
+                  <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+                    {service.title}
+                  </h1>
+                </div>
               </div>
 
-              <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
-                <span>Duration: <strong className="text-foreground">{service.duration}</strong></span>
-                <span>Created: <strong className="text-foreground">{service.createdAt || "Recently"}</strong></span>
+              {/* Price Tag */}
+              <div className="text-left sm:text-right bg-background/80 backdrop-blur-xs p-4 rounded-2xl border border-border/60 shadow-2xs shrink-0">
+                <span className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider block">
+                  Service Rate
+                </span>
+                <span className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
+                  ${formattedPrice}
+                </span>
+                <span className="text-[11px] text-muted-foreground block mt-0.5">
+                  USD per booking
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Metrics Bar */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border/60 bg-muted/20 border-b border-border/60 text-xs">
+            <div className="p-4 flex items-center gap-3">
+              <DollarSign className="h-4 w-4 text-primary" />
+              <div>
+                <p className="text-muted-foreground text-[11px]">Pricing Model</p>
+                <p className="font-semibold text-foreground">Fixed Rate (${formattedPrice})</p>
               </div>
             </div>
 
-            {/* Content & Metadata (7 cols) */}
-            <div className="lg:col-span-7 space-y-5">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-600 dark:text-amber-400">
-                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                    <span>{service.rating}</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    Based on {service.reviewsCount} customer reviews
-                  </span>
-                </div>
+            <div className="p-4 flex items-center gap-3">
+              <Calendar className="h-4 w-4 text-primary" />
+              <div>
+                <p className="text-muted-foreground text-[11px]">Created On</p>
+                <p className="font-semibold text-foreground">{formattedCreateDate}</p>
+              </div>
+            </div>
 
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-                  {service.title}
-                </h1>
-
-                <p className="text-sm text-muted-foreground leading-relaxed pt-1">
-                  {service.description}
+            <div className="p-4 flex items-center gap-3">
+              <Clock className="h-4 w-4 text-primary" />
+              <div>
+                <p className="text-muted-foreground text-[11px]">Last Updated</p>
+                <p className="font-semibold text-foreground">
+                  {formattedUpdateDate || "Never"}
                 </p>
               </div>
-
-              {/* Quick Performance Grid */}
-              <div className="grid grid-cols-3 gap-3 pt-2">
-                <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-center">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">
-                    Completed Jobs
-                  </span>
-                  <span className="text-lg font-extrabold text-foreground">
-                    {service.reviewsCount + 45}
-                  </span>
-                </div>
-
-                <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-center">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">
-                    Total Revenue
-                  </span>
-                  <span className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">
-                    ${(service.price * (service.reviewsCount || 10)).toLocaleString()}
-                  </span>
-                </div>
-
-                <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-center">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">
-                    Quality Score
-                  </span>
-                  <span className="text-lg font-extrabold text-foreground">
-                    99.4%
-                  </span>
-                </div>
-              </div>
-
-              {/* Guarantees / Highlights */}
-              <div className="flex flex-wrap items-center gap-3 pt-2 text-xs font-semibold text-foreground">
-                <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5">
-                  <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                  <span>30-Day Service Warranty</span>
-                </div>
-                <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5">
-                  <Award className="h-4 w-4 text-primary" />
-                  <span>Verified Professional Tools</span>
-                </div>
-              </div>
-
             </div>
-
-          </div>
-        </div>
-
-        {/* 2-Column: Inclusions/Exclusions & Recent Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* Left: What is Included / Excluded (7 cols) */}
-          <div className="lg:col-span-7 space-y-6">
-            
-            {/* Inclusions Card */}
-            <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs space-y-4">
-              <div className="flex items-center gap-2 border-b border-border/60 pb-3">
-                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                <h3 className="text-base font-bold text-foreground">
-                  What&apos;s Included in Service
-                </h3>
-              </div>
-
-              <ul className="space-y-2.5">
-                {service.inclusions && service.inclusions.length > 0 ? (
-                  service.inclusions.map((item, idx) => (
-                    <li key={idx} className="flex items-start gap-3 text-xs sm:text-sm text-foreground">
-                      <Check className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                      <span>{item}</span>
-                    </li>
-                  ))
-                ) : (
-                  <li className="text-xs text-muted-foreground">Standard professional inspection and labor.</li>
-                )}
-              </ul>
-            </div>
-
-            {/* Exclusions Card */}
-            <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs space-y-4">
-              <div className="flex items-center gap-2 border-b border-border/60 pb-3">
-                <XCircle className="h-5 w-5 text-rose-500" />
-                <h3 className="text-base font-bold text-foreground">
-                  What&apos;s Excluded / Extra Charges
-                </h3>
-              </div>
-
-              <ul className="space-y-2.5">
-                {service.exclusions && service.exclusions.length > 0 ? (
-                  service.exclusions.map((item, idx) => (
-                    <li key={idx} className="flex items-start gap-3 text-xs sm:text-sm text-muted-foreground">
-                      <X className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                      <span>{item}</span>
-                    </li>
-                  ))
-                ) : (
-                  <li className="text-xs text-muted-foreground">Major replacement components and third-party parts.</li>
-                )}
-              </ul>
-            </div>
-
-            {/* Key Service Features */}
-            {service.features && service.features.length > 0 && (
-              <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs space-y-3">
-                <h3 className="text-base font-bold text-foreground">
-                  Service Key Features
-                </h3>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {service.features.map((feat, idx) => (
-                    <span
-                      key={idx}
-                      className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary"
-                    >
-                      {feat}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
           </div>
 
-          {/* Right: Recent Customer Bookings for this Category (5 cols) */}
-          <div className="lg:col-span-5 space-y-6">
-            
-            {/* Recent Orders Widget */}
-            <div className="rounded-2xl border border-border/80 bg-card p-5 sm:p-6 shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-border/60 pb-3">
-                <div>
-                  <h3 className="text-sm font-bold text-foreground">
-                    Recent Bookings
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground">
-                    Appointments scheduled for this category
-                  </p>
-                </div>
-                <Button asChild variant="ghost" size="sm" className="h-8 text-xs">
-                  <Link href="/account/my-orders">View All</Link>
-                </Button>
+          {/* Detailed Description Section */}
+          <CardContent className="p-6 sm:p-8 space-y-6">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <FileText className="h-4 w-4 text-primary" />
+                <span>Service Description</span>
               </div>
-
-              <div className="space-y-3">
-                {serviceOrders.slice(0, 3).map((order) => (
-                  <div
-                    key={order.id}
-                    className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-2 text-xs"
-                  >
-                    <div className="flex items-center justify-between font-mono font-bold">
-                      <span className="text-foreground">{order.orderNumber}</span>
-                      <span className="text-primary font-sans">${order.totalAmount}</span>
-                    </div>
-
-                    <div className="space-y-0.5 text-muted-foreground text-[11px]">
-                      <div className="flex items-center gap-1.5">
-                        <Users className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-foreground font-medium">{order.customer.name}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Calendar className="h-3 w-3 text-muted-foreground" />
-                        <span>{order.scheduledDate} ({order.scheduledTimeSlot})</span>
-                      </div>
-                    </div>
-
-                    <div className="pt-1 flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                        {order.status}
-                      </span>
-                      <Link
-                        href={`/account/my-orders/${order.id}`}
-                        className="text-primary hover:underline text-[11px] font-medium"
-                      >
-                        Inspect →
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <p className="text-sm sm:text-base text-foreground/90 leading-relaxed whitespace-pre-line bg-muted/10 p-5 rounded-2xl border border-border/60">
+                {service.description}
+              </p>
             </div>
 
-            {/* Quick Actions Card */}
-            <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-xs space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Service Actions
-              </h3>
-              <div className="space-y-2">
-                <Button asChild variant="outline" size="sm" className="w-full justify-start text-xs rounded-xl h-9">
+            {/* Quick Actions Footer */}
+            <div className="pt-4 border-t border-border/60 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Button asChild variant="outline" size="sm" className="gap-1.5 text-xs">
                   <Link href={`/provider/p_services/edit/${service.id}`}>
-                    <Pencil className="h-3.5 w-3.5 mr-2 text-primary" />
-                    Modify Rates & Description
+                    <Pencil className="h-3.5 w-3.5" />
+                    Modify Details
                   </Link>
                 </Button>
-                <Button asChild variant="outline" size="sm" className="w-full justify-start text-xs rounded-xl h-9">
+                <Button asChild variant="outline" size="sm" className="gap-1.5 text-xs">
                   <Link href="/provider/p_services/create">
-                    <Sparkles className="h-3.5 w-3.5 mr-2 text-primary" />
-                    Clone / Add Similar Offering
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    Create Another Service
                   </Link>
                 </Button>
               </div>
+
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setDeleteModalOpen(true)}
+                className="gap-1.5 text-xs"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete Offering
+              </Button>
             </div>
-
-          </div>
-
-        </div>
+          </CardContent>
+        </Card>
 
       </div>
 
@@ -460,7 +319,7 @@ export default function ServiceDetails({ serviceId: propId }: ServiceDetailsProp
             </div>
             <DialogTitle className="text-base font-bold">Delete Service Offering</DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Are you sure you want to permanently delete &quot;{service.title}&quot;? Existing past orders will remain in history, but customers will no longer be able to book this service.
+              Are you sure you want to permanently delete &quot;{service.title}&quot;? Customers will no longer be able to book this service. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
 

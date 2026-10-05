@@ -6,6 +6,6 @@ export const metadata = {
   description: "View and manage service performance, inclusions, and settings.",
 };
 
-export default function Page() {
-  return <ServiceDetails />;
+export default function Page({ params }: { params: { serviceId: string } }) {
+  return <ServiceDetails serviceId={params.serviceId} />;
 }

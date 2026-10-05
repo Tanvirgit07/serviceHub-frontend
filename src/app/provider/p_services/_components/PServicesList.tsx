@@ -1,24 +1,23 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import {
   PlusCircle,
   Search,
-  Filter,
-  Star,
-  Clock,
   Eye,
   Pencil,
   Trash2,
   ArrowUpDown,
   X,
   AlertCircle,
-  Wrench,
+  Briefcase,
+  Calendar,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input"; 
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -27,96 +26,101 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { Service } from "@/features/services/api/services.api";
 import {
-  getStoredServices,
-  updateStoredService,
-  deleteStoredService,
-  Service,
-  CATEGORIES,
-} from "@/data/servicesData";
+  useMyServices,
+  useDeleteService,
+  useToggleAvailability,
+} from "@/features/services/hook/useServices";
 
 export default function PServicesList() {
-  const [services, setServices] = useState<Service[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Fetch real services created by the logged-in provider
+  const { data: services = [], isLoading, isError, error, refetch } = useMyServices();
+  const { mutate: deleteService, isPending: isDeleting } = useDeleteService();
+  const { mutate: toggleAvailability } = useToggleAvailability();
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
-  const [sortBy, setSortBy] = useState<"newest" | "price-asc" | "price-desc" | "rating">("newest");
+  const [sortBy, setSortBy] = useState<"newest" | "price-asc" | "price-desc">("newest");
 
   // Delete Dialog state
   const [serviceToDelete, setServiceToDelete] = useState<Service | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
-  useEffect(() => {
-    setServices(getStoredServices());
-    setIsLoading(false);
-  }, []);
+  const activeCount = useMemo(
+    () => (Array.isArray(services) ? services.filter((s) => s.availability).length : 0),
+    [services]
+  );
+  const inactiveCount = useMemo(
+    () => (Array.isArray(services) ? services.length - activeCount : 0),
+    [services, activeCount]
+  );
 
   // Filter and sort services
   const filteredServices = useMemo(() => {
+    if (!Array.isArray(services)) return [];
+
     return services
       .filter((service) => {
+        const q = searchQuery.toLowerCase().trim();
         const matchesSearch =
-          service.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          service.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          service.category.toLowerCase().includes(searchQuery.toLowerCase());
-
-        const matchesCategory =
-          selectedCategory === "All" ||
-          service.category.toLowerCase() === selectedCategory.toLowerCase();
+          !q ||
+          service.title.toLowerCase().includes(q) ||
+          service.description.toLowerCase().includes(q);
 
         const matchesStatus =
           statusFilter === "ALL" ||
           (statusFilter === "ACTIVE" && service.availability) ||
           (statusFilter === "INACTIVE" && !service.availability);
 
-        return matchesSearch && matchesCategory && matchesStatus;
+        return matchesSearch && matchesStatus;
       })
       .sort((a, b) => {
-        if (sortBy === "price-asc") return a.price - b.price;
-        if (sortBy === "price-desc") return b.price - a.price;
-        if (sortBy === "rating") return b.rating - a.rating;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        const priceA = Number(a.price) || 0;
+        const priceB = Number(b.price) || 0;
+        if (sortBy === "price-asc") return priceA - priceB;
+        if (sortBy === "price-desc") return priceB - priceA;
+
+        const dateA = new Date(a.createAt).getTime() || 0;
+        const dateB = new Date(b.createAt).getTime() || 0;
+        return dateB - dateA;
       });
-  }, [services, searchQuery, selectedCategory, statusFilter, sortBy]);
+  }, [services, searchQuery, statusFilter, sortBy]);
 
   const handleToggleAvailability = (service: Service) => {
-    const updated = updateStoredService(service.id, {
+    toggleAvailability({
+      id: service.id,
       availability: !service.availability,
     });
-
-    if (updated) {
-      setServices((prev) =>
-        prev.map((s) => (s.id === service.id ? { ...s, availability: !s.availability } : s))
-      );
-      toast.success(
-        `"${service.title}" is now ${!service.availability ? "Active (Online)" : "Paused (Offline)"}`
-      );
-    } else {
-      toast.error("Failed to update service availability.");
-    }
   };
 
   const confirmDelete = () => {
     if (!serviceToDelete) return;
-    setIsDeleting(true);
 
-    const success = deleteStoredService(serviceToDelete.id);
-    if (success) {
-      setServices((prev) => prev.filter((s) => s.id !== serviceToDelete.id));
-      toast.success(`"${serviceToDelete.title}" has been deleted.`);
-      setServiceToDelete(null);
-    } else {
-      toast.error("Failed to delete service.");
-    }
-    setIsDeleting(false);
+    deleteService(serviceToDelete.id, {
+      onSuccess: () => {
+        setServiceToDelete(null);
+      },
+    });
   };
 
-  const activeCount = services.filter((s) => s.availability).length;
-  const inactiveCount = services.length - activeCount;
+  if (isError) {
+    return (
+      <div className="p-6">
+        <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-8 text-center space-y-3">
+          <AlertCircle className="h-8 w-8 text-destructive mx-auto" />
+          <h3 className="text-base font-bold text-foreground">Failed to load services</h3>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto">
+            {error?.message || "Could not retrieve your service listings from the server."}
+          </p>
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-2">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -130,7 +134,7 @@ export default function PServicesList() {
                 My Services
               </h1>
               <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
-                {services.length} Total
+                {Array.isArray(services) ? services.length : 0} Total
               </span>
             </div>
             <p className="text-xs sm:text-sm text-muted-foreground">
@@ -148,7 +152,7 @@ export default function PServicesList() {
           </div>
         </div>
 
-        {/* Minimal Search & Filter Toolbar */}
+        {/* Search & Filter Toolbar */}
         <div className="rounded-2xl border border-border/70 bg-card p-4 shadow-2xs space-y-3.5">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             
@@ -157,7 +161,7 @@ export default function PServicesList() {
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 type="text"
-                placeholder="Search services by title, category..."
+                placeholder="Search services by title or description..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9.5 pr-8 h-9 text-xs sm:text-sm rounded-xl bg-muted/30 border-border/70"
@@ -184,7 +188,7 @@ export default function PServicesList() {
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  All ({services.length})
+                  All ({Array.isArray(services) ? services.length : 0})
                 </button>
                 <button
                   onClick={() => setStatusFilter("ACTIVE")}
@@ -213,11 +217,12 @@ export default function PServicesList() {
                 <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
                 <select
                   value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as "newest" | "price-asc" | "price-desc" | "rating")}
+                  onChange={(e) =>
+                    setSortBy(e.target.value as "newest" | "price-asc" | "price-desc")
+                  }
                   className="bg-transparent text-foreground font-medium focus:outline-none cursor-pointer text-xs"
                 >
                   <option value="newest">Newest First</option>
-                  <option value="rating">Top Rated</option>
                   <option value="price-asc">Price: Low to High</option>
                   <option value="price-desc">Price: High to Low</option>
                 </select>
@@ -225,58 +230,41 @@ export default function PServicesList() {
             </div>
 
           </div>
-
-          {/* Category Filter Pills */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/40">
-            <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1 mr-1">
-              <Filter className="h-3 w-3" />
-              Category:
-            </span>
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`rounded-lg px-2.5 py-0.5 text-xs font-medium transition-all ${
-                  selectedCategory.toLowerCase() === cat.toLowerCase()
-                    ? "bg-primary text-primary-foreground font-semibold shadow-2xs"
-                    : "bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground border border-border/50"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Services List View */}
         {isLoading ? (
-          <div className="py-16 text-center text-xs text-muted-foreground">
-            Loading service offerings...
+          <div className="py-20 flex flex-col items-center justify-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-xs text-muted-foreground">Loading your services...</p>
           </div>
         ) : filteredServices.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border/80 bg-card p-12 text-center space-y-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted mx-auto text-muted-foreground">
-              <Wrench className="h-6 w-6" />
+              <Briefcase className="h-6 w-6" />
             </div>
             <div className="space-y-1">
               <h3 className="text-base font-bold text-foreground">No services found</h3>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                No service offerings match your current search or category filter.
+                {searchQuery || statusFilter !== "ALL"
+                  ? "No services match your current search or filter criteria."
+                  : "You haven't created any service offerings yet. Start listing your services to accept customer bookings."}
               </p>
             </div>
             <div className="flex items-center justify-center gap-3 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSearchQuery("");
-                  setSelectedCategory("All");
-                  setStatusFilter("ALL");
-                }}
-                className="text-xs"
-              >
-                Reset Filters
-              </Button>
+              {searchQuery || statusFilter !== "ALL" ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setStatusFilter("ALL");
+                  }}
+                  className="text-xs"
+                >
+                  Reset Filters
+                </Button>
+              ) : null}
               <Button asChild size="sm" className="text-xs">
                 <Link href="/provider/p_services/create">
                   <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
@@ -290,40 +278,47 @@ export default function PServicesList() {
             {filteredServices.map((service) => (
               <div
                 key={service.id}
-                className="group flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-border/70 bg-card p-3.5 sm:p-4 shadow-2xs hover:border-primary/40 hover:shadow-xs transition-all"
+                className="group flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-border/70 bg-card p-4 shadow-2xs hover:border-primary/40 hover:shadow-xs transition-all"
               >
-                {/* Left: Thumbnail & Details */}
+                {/* Left: Icon & Details */}
                 <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-                  <div className="relative h-16 w-16 sm:h-20 sm:w-20 shrink-0 overflow-hidden rounded-xl border border-border bg-muted">
-                    <Image
-                      src={service.imageUrl}
-                      alt={service.title}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
+                  <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary group-hover:scale-105 transition-transform">
+                    <Briefcase className="h-6 w-6" />
                   </div>
 
                   <div className="space-y-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-bold text-foreground uppercase tracking-wide">
-                        {service.category}
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                          service.availability
+                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            service.availability ? "bg-emerald-500" : "bg-muted-foreground"
+                          }`}
+                        />
+                        {service.availability ? "Active" : "Paused"}
                       </span>
-                      <div className="flex items-center gap-1 text-[11px] text-amber-500 font-semibold">
-                        <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                        <span>{service.rating}</span>
-                        <span className="text-muted-foreground font-normal">
-                          ({service.reviewsCount})
-                        </span>
-                      </div>
-                      <span className="text-muted-foreground text-xs hidden sm:inline">•</span>
-                      <div className="hidden sm:flex items-center gap-1 text-[11px] text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        <span>{service.duration}</span>
-                      </div>
+
+                      {service.createAt && (
+                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                          <Calendar className="h-3 w-3" />
+                          <span>
+                            {new Date(service.createAt).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     <Link
-                      href={`/provider/p_services/${service.id}`}
+                      href={`/provider/p_services/edit/${service.id}`}
                       className="text-sm sm:text-base font-bold text-foreground hover:text-primary transition-colors truncate block"
                       title={service.title}
                     >
@@ -344,7 +339,7 @@ export default function PServicesList() {
                       Rate
                     </span>
                     <span className="text-base sm:text-lg font-extrabold text-foreground tracking-tight">
-                      ${service.price}
+                      ${Number(service.price).toFixed(2)}
                     </span>
                   </div>
 
@@ -414,7 +409,10 @@ export default function PServicesList() {
       </div>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={!!serviceToDelete} onOpenChange={(open) => !open && setServiceToDelete(null)}>
+      <Dialog
+        open={Boolean(serviceToDelete)}
+        onOpenChange={(open) => !open && setServiceToDelete(null)}
+      >
         <DialogContent className="sm:max-w-md rounded-2xl">
           <DialogHeader>
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10 text-destructive mb-2">
