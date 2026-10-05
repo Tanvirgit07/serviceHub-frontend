@@ -1,53 +1,45 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
-  Star,
-  Clock,
   ShieldCheck,
   CheckCircle2,
-  XCircle,
-  Phone,
-  Mail,
   ArrowLeft,
- 
-  Check,
   Loader2,
+  Briefcase,
+  Calendar,
+  Clock,
+  Sparkles,
+  DollarSign,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { toast } from "sonner";
-import {
-  Service,
-  getStoredServiceById,
-  INITIAL_SERVICES,
-} from "@/data/servicesData";
+import { useServiceDetails } from "@/features/services/hook/useServices";
+import { useCreateOrder } from "@/features/orders/hooks/useOrders";
 
 export default function ServiceDetails() {
   const params = useParams();
-  const serviceId = params?.serviceId as string;
+  const router = useRouter();
+  const serviceId = (params?.serviceId as string) || "";
+  const { data: session, status: sessionStatus } = useSession();
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [service, setService] = useState<Service | null>(null);
+  // Fetch real service details from backend
+  const {
+    data: service,
+    isLoading,
+    isError,
+    error,
+  } = useServiceDetails(serviceId);
+
+  const { createOrder, isPending: isOrdering, isSuccess } = useCreateOrder();
+
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
-  const [selectedTime, setSelectedTime] = useState("10:00 AM - 12:00 PM");
-  const [isBooked, setIsBooked] = useState(false);
-
-  useEffect(() => {
-    if (serviceId) {
-      const found =
-        getStoredServiceById(serviceId) ||
-        INITIAL_SERVICES.find((s) => s.id === serviceId) ||
-        null;
-      setService(found);
-    }
-    setIsLoading(false);
-  }, [serviceId]);
+  const [selectedTime, setSelectedTime] = useState("09:00 AM - 11:00 AM");
 
   if (isLoading) {
     return (
@@ -58,14 +50,18 @@ export default function ServiceDetails() {
     );
   }
 
-  if (!service) {
+  if (isError || !service) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center container mx-auto px-4 py-16 text-center">
+      <div className="min-h-[70vh] flex flex-col items-center justify-center container mx-auto px-4 py-16 text-center space-y-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive mx-auto">
+          <AlertCircle className="h-6 w-6" />
+        </div>
         <h2 className="text-2xl font-bold text-foreground">Service Not Found</h2>
-        <p className="text-muted-foreground mt-2 text-sm max-w-sm">
-          The service you are looking for does not exist or has been removed.
+        <p className="text-muted-foreground text-sm max-w-sm">
+          {error?.message ||
+            "The service you are looking for does not exist or is currently unavailable."}
         </p>
-        <Button asChild className="mt-6">
+        <Button asChild className="mt-4">
           <Link href="/services">Browse All Services</Link>
         </Button>
       </div>
@@ -74,23 +70,47 @@ export default function ServiceDetails() {
 
   const handleBooking = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsBooked(true);
-    toast.success(`Booking confirmed for ${service.title}!`);
+
+    // Not logged in → redirect to sign in
+    if (sessionStatus === "unauthenticated") {
+      router.push(`/signin?callbackUrl=/services/${serviceId}`);
+      return;
+    }
+
+    // Provider cannot book
+    if (session?.user?.role?.toUpperCase() === "PROVIDER") {
+      return;
+    }
+
+    createOrder({ serviceId });
   };
 
-  const getInitials = (nameStr: string) => {
-    return nameStr
-      .split(" ")
-      .map((p) => p[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase();
+  const formattedPrice = Number(service.price).toFixed(2);
+  const formattedCreateDate = service.createAt
+    ? new Date(service.createAt).toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "Recently";
+
+  const isProvider = session?.user?.role?.toUpperCase() === "PROVIDER";
+  const isLoadingSession = sessionStatus === "loading";
+
+  const bookingButtonLabel = () => {
+    if (isLoadingSession) return "Loading...";
+    if (!service.availability) return "Service Unavailable";
+    if (isOrdering) return "Placing Order...";
+    if (isSuccess) return "Booking Confirmed ✓";
+    if (isProvider) return "Providers Cannot Book";
+    if (sessionStatus === "unauthenticated") return "Sign In to Book";
+    return "Book This Service";
   };
 
   return (
     <div className="min-h-screen bg-background py-8 sm:py-12 border-b border-border/40">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
-        
+
         {/* Top Breadcrumb & Actions */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
@@ -117,254 +137,191 @@ export default function ServiceDetails() {
 
         {/* 2-Column Details Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* Left Column: Details & Inclusions (lg:col-span-8) */}
-          <div className="lg:col-span-8 space-y-8">
-            
-            {/* Main Featured Image Card */}
-            <div className="relative h-[320px] sm:h-[420px] w-full rounded-2xl overflow-hidden border border-border shadow-sm">
-              <Image
-                src={service.imageUrl}
-                alt={service.title}
-                fill
-                priority
-                sizes="(max-width: 1024px) 100vw, 66vw"
-                className="object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
-              {/* Category Pill */}
-              <div className="absolute top-4 left-4">
-                <span className="rounded-full bg-background/90 px-3 py-1 text-xs font-bold text-foreground backdrop-blur-md shadow-xs">
-                  {service.category}
+          {/* Left Column: Details & Overview (lg:col-span-8) */}
+          <div className="lg:col-span-8 space-y-6">
+
+            {/* Main Banner Card */}
+            <div className="rounded-2xl border border-border/80 bg-gradient-to-br from-primary/10 via-muted/40 to-card p-6 sm:p-8 shadow-xs space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-background/90 px-3 py-1 text-xs font-semibold text-foreground backdrop-blur-md shadow-xs border border-border/60">
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                  Verified Professional Service
+                </span>
+
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                    service.availability
+                      ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                      : "bg-amber-500/10 text-amber-600 border border-amber-500/20"
+                  }`}
+                >
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      service.availability ? "bg-emerald-500" : "bg-amber-500"
+                    }`}
+                  />
+                  {service.availability ? "Available for Booking" : "Currently Paused"}
                 </span>
               </div>
 
-              {/* Bottom Info on Image */}
-              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 rounded-md bg-black/60 px-2.5 py-1 text-xs font-bold backdrop-blur-sm">
-                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                    <span>{service.rating.toFixed(1)}</span>
-                    <span className="font-normal text-white/80">({service.reviewsCount} reviews)</span>
-                  </div>
-                  <div className="flex items-center gap-1 rounded-md bg-black/60 px-2.5 py-1 text-xs font-medium backdrop-blur-sm">
-                    <Clock className="h-3.5 w-3.5" />
-                    <span>{service.duration}</span>
-                  </div>
+              <div className="flex items-start gap-4 pt-2">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-primary/20 bg-background text-primary shadow-xs">
+                  <Briefcase className="h-7 w-7" />
                 </div>
 
-                <span className="rounded-full bg-emerald-500/90 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
-                  Available Now
-                </span>
+                <div className="space-y-1">
+                  <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+                    {service.title}
+                  </h1>
+                  <p className="text-xs text-muted-foreground flex items-center gap-2">
+                    <Calendar className="h-3.5 w-3.5" />
+                    Listed on {formattedCreateDate}
+                  </p>
+                </div>
               </div>
             </div>
 
-            {/* Title & Overview */}
+            {/* Description & Overview */}
             <div className="rounded-2xl border border-border/80 bg-card p-6 sm:p-8 shadow-xs space-y-4">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-                {service.title}
-              </h1>
+              <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-primary" />
+                About This Service
+              </h2>
 
-              <p className="text-sm sm:text-base leading-relaxed text-muted-foreground">
+              <p className="text-sm sm:text-base leading-relaxed text-muted-foreground whitespace-pre-line">
                 {service.description}
               </p>
 
-              {/* Key Features Badges */}
+              {/* Trust Badges */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-border/60">
-                {service.features.map((feat, idx) => (
-                  <div key={idx} className="flex items-center gap-2 text-xs font-semibold text-foreground">
-                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                    <span>{feat}</span>
-                  </div>
-                ))}
+                <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                  <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <span>Verified Technicians</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                  <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                  <span>Quality Guaranteed</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                  <Clock className="h-4 w-4 text-primary shrink-0" />
+                  <span>Punctual Service</span>
+                </div>
               </div>
             </div>
 
-            {/* What is Included & Excluded */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              
-              {/* Inclusions */}
-              <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs space-y-4">
-                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <h3>What is Included</h3>
-                </div>
-                <ul className="space-y-2.5 text-xs sm:text-sm text-muted-foreground">
-                  {service.inclusions.map((inc, idx) => (
-                    <li key={idx} className="flex items-start gap-2">
-                      <Check className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                      <span>{inc}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Exclusions */}
-              <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs space-y-4">
-                <div className="flex items-center gap-2 text-destructive font-bold text-sm">
-                  <XCircle className="h-4 w-4" />
-                  <h3>What is Excluded</h3>
-                </div>
-                <ul className="space-y-2.5 text-xs sm:text-sm text-muted-foreground">
-                  {service.exclusions.map((exc, idx) => (
-                    <li key={idx} className="flex items-start gap-2">
-                      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground shrink-0 mt-1.5" />
-                      <span>{exc}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-            </div>
-
-            {/* Service Provider Info Card */}
-            <div className="rounded-2xl border border-border/80 bg-card p-6 sm:p-8 shadow-xs">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4">
-                About the Service Provider
-              </h2>
-
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3.5">
-                  <Avatar className="h-14 w-14 border border-border">
-                    <AvatarImage src={service.provider.avatar} alt={service.provider.name} />
-                    <AvatarFallback className="font-bold text-sm">
-                      {getInitials(service.provider.name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <h3 className="font-bold text-base text-foreground">
-                      {service.provider.name}
-                    </h3>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                      <span className="flex items-center gap-1 text-foreground font-semibold">
-                        <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                        {service.provider.rating} Rating
-                      </span>
-                      <span>•</span>
-                      <span>{service.provider.jobsCompleted}+ Jobs Done</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:items-end text-xs text-muted-foreground space-y-1">
-                  <span className="flex items-center gap-1.5">
-                    <Phone className="h-3.5 w-3.5 text-primary" />
-                    {service.provider.phone}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <Mail className="h-3.5 w-3.5 text-primary" />
-                    {service.provider.email}
-                  </span>
-                </div>
-              </div>
+            {/* Standard Guarantees */}
+            <div className="rounded-2xl border border-border/80 bg-muted/20 p-6 space-y-3">
+              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-primary" />
+                ServiceHub Quality Guarantee
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                All bookings through ServiceHub are protected by our service assurance. If you are not satisfied with the work done, our support team will help resolve the issue or arrange a re-service.
+              </p>
             </div>
 
           </div>
 
-          {/* Right Column: Sticky Booking Card (lg:col-span-4) */}
-          <div className="lg:col-span-4 lg:sticky lg:top-24 space-y-6">
-            <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-md space-y-5">
-              
-              <div className="flex items-baseline justify-between border-b border-border/60 pb-4">
-                <div>
-                  <span className="text-xs text-muted-foreground">Standard Service Fee</span>
-                  <div className="text-3xl font-extrabold text-foreground">
-                    ${service.price}
-                  </div>
-                </div>
-                <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-secondary-foreground">
-                  Fixed Pricing
+          {/* Right Column: Booking Sidebar Card (lg:col-span-4) */}
+          <div className="lg:col-span-4">
+            <div className="sticky top-24 rounded-2xl border border-border/80 bg-card p-6 shadow-sm space-y-6">
+
+              {/* Pricing Header */}
+              <div className="border-b border-border/60 pb-5">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Upfront Rate
                 </span>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="text-3xl font-extrabold text-foreground tracking-tight">
+                    ${formattedPrice}
+                  </span>
+                  <span className="text-xs text-muted-foreground font-medium">
+                    USD / service
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Transparent pricing with no hidden charges.
+                </p>
               </div>
 
-              {isBooked ? (
-                /* Success Booking Alert */
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center space-y-2">
-                  <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-400 mx-auto" />
-                  <h4 className="font-bold text-emerald-900 dark:text-emerald-200 text-sm">
-                    Booking Confirmed!
-                  </h4>
-                  <p className="text-xs text-emerald-800 dark:text-emerald-300">
-                    A service technician from <strong>{service.provider.name}</strong> will contact you on {selectedDate} at {selectedTime}.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsBooked(false)}
-                    className="w-full mt-2 text-xs"
+              {/* Booking Form */}
+              <form onSubmit={handleBooking} className="space-y-4">
+
+                {/* Date Picker */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                    Select Appointment Date
+                  </label>
+                  <input
+                    type="date"
+                    min={new Date().toISOString().split("T")[0]}
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    required
+                    className="w-full h-11 rounded-lg border border-input bg-background px-3 py-2 text-xs sm:text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+
+                {/* Time Slot Picker */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                    Preferred Time Slot
+                  </label>
+                  <select
+                    value={selectedTime}
+                    onChange={(e) => setSelectedTime(e.target.value)}
+                    className="w-full h-11 rounded-lg border border-input bg-background px-3 py-2 text-xs sm:text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                   >
-                    Book Another Slot
-                  </Button>
+                    <option value="09:00 AM - 11:00 AM">09:00 AM – 11:00 AM (Morning)</option>
+                    <option value="11:00 AM - 01:00 PM">11:00 AM – 01:00 PM (Midday)</option>
+                    <option value="02:00 PM - 04:00 PM">02:00 PM – 04:00 PM (Afternoon)</option>
+                    <option value="04:00 PM - 06:00 PM">04:00 PM – 06:00 PM (Evening)</option>
+                  </select>
                 </div>
-              ) : (
-                /* Booking Form */
-                <form onSubmit={handleBooking} className="space-y-4">
-                  {/* Select Date */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">
-                      Select Preferred Date
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="date"
-                        value={selectedDate}
-                        onChange={(e) => setSelectedDate(e.target.value)}
-                        required
-                        className="h-10 w-full rounded-md border border-input bg-transparent px-3 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                      />
-                    </div>
-                  </div>
 
-                  {/* Select Time Slot */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">
-                      Preferred Time Slot
-                    </label>
-                    <select
-                      value={selectedTime}
-                      onChange={(e) => setSelectedTime(e.target.value)}
-                      className="h-10 w-full rounded-md border border-input bg-transparent px-3 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                    >
-                      <option value="09:00 AM - 11:00 AM">09:00 AM - 11:00 AM</option>
-                      <option value="11:00 AM - 01:00 PM">11:00 AM - 01:00 PM</option>
-                      <option value="02:00 PM - 04:00 PM">02:00 PM - 04:00 PM</option>
-                      <option value="04:00 PM - 06:00 PM">04:00 PM - 06:00 PM</option>
-                    </select>
-                  </div>
+                {/* Submit Booking Button */}
+                <Button
+                  type="submit"
+                  disabled={
+                    !service.availability ||
+                    isOrdering ||
+                    isSuccess ||
+                    isLoadingSession ||
+                    isProvider
+                  }
+                  className="w-full h-11 font-semibold rounded-xl text-sm mt-2"
+                >
+                  {isOrdering && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {bookingButtonLabel()}
+                </Button>
 
-                  {/* Price Calculation Summary */}
-                  <div className="pt-3 border-t border-border/50 space-y-2 text-xs text-muted-foreground">
-                    <div className="flex justify-between">
-                      <span>Service Charge</span>
-                      <span className="font-semibold text-foreground">${service.price}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Platform & Inspection</span>
-                      <span className="font-semibold text-foreground">$5</span>
-                    </div>
-                    <div className="flex justify-between pt-2 border-t border-border/40 text-sm font-bold text-foreground">
-                      <span>Total Estimated Cost</span>
-                      <span>${service.price + 5}</span>
-                    </div>
-                  </div>
+                {isSuccess && (
+                  <p className="text-[11px] text-center text-emerald-600 dark:text-emerald-400 font-medium">
+                    Order placed! The provider will confirm your booking shortly.{" "}
+                    <Link href="/account/my-orders" className="underline font-bold">
+                      View My Orders →
+                    </Link>
+                  </p>
+                )}
 
-                  <Button type="submit" className="w-full h-11 text-sm font-semibold shadow-xs">
-                    Book Service Now
-                  </Button>
-                </form>
-              )}
+                {isProvider && (
+                  <p className="text-[11px] text-center text-amber-600 font-medium">
+                    Providers cannot place orders. Switch to a customer account.
+                  </p>
+                )}
 
-              {/* Trust Features */}
-              <div className="pt-4 border-t border-border/50 space-y-2 text-[11px] text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
-                  <span>100% Satisfaction & 30-Day Service Warranty</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-primary shrink-0" />
-                  <span>Free cancellation up to 2 hours before scheduled slot</span>
-                </div>
+              </form>
+
+              {/* Trust Footer */}
+              <div className="pt-4 border-t border-border/60 text-center space-y-1">
+                <p className="text-[11px] text-muted-foreground flex items-center justify-center gap-1">
+                  <DollarSign className="h-3 w-3 text-emerald-500" />
+                  Pay upon service completion
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  Free cancellation available from your orders page.
+                </p>
               </div>
 
             </div>

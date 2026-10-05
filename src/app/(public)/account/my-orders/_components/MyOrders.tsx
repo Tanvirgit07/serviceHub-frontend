@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import {
   Calendar,
   Clock,
@@ -12,24 +11,19 @@ import {
   ShoppingBag,
   CheckCircle2,
   XCircle,
+  Loader2,
+  AlertCircle,
+  DollarSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import {
-  OrderItem,
-  OrderStatus,
-  getStoredOrders,
-} from "@/data/ordersData";
+import { useMyOrders } from "@/features/orders/hooks/useOrders";
+import { Order, OrderStatus } from "@/features/orders/api/orders.api";
 
 export default function MyOrders() {
-  const [orders, setServicesOrders] = useState<OrderItem[]>([]);
+  const { data: orders = [], isLoading, isError, error } = useMyOrders();
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
-
-  useEffect(() => {
-    setServicesOrders(getStoredOrders());
-  }, []);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -37,9 +31,8 @@ export default function MyOrders() {
         statusFilter === "ALL" || order.status === statusFilter;
       const matchesSearch =
         !searchQuery.trim() ||
-        order.serviceTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.category.toLowerCase().includes(searchQuery.toLowerCase());
+        order.service.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        order.id.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesStatus && matchesSearch;
     });
   }, [orders, statusFilter, searchQuery]);
@@ -57,9 +50,10 @@ export default function MyOrders() {
         return (
           <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-semibold text-blue-600 dark:text-blue-400">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            Confirmed & Scheduled
+            Confirmed
           </span>
         );
+
       case "COMPLETED":
         return (
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
@@ -77,10 +71,38 @@ export default function MyOrders() {
     }
   };
 
+  // ── Loading State ──────────────────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center container mx-auto px-4 py-16 text-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+        <p className="text-sm text-muted-foreground">Loading your orders...</p>
+      </div>
+    );
+  }
+
+  // ── Error State ────────────────────────────────────────────────────────────
+  if (isError) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center container mx-auto px-4 py-16 text-center space-y-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive mx-auto">
+          <AlertCircle className="h-6 w-6" />
+        </div>
+        <h2 className="text-lg font-bold text-foreground">Failed to Load Orders</h2>
+        <p className="text-sm text-muted-foreground max-w-sm">
+          {error?.message || "Something went wrong. Please try again later."}
+        </p>
+        <Button asChild>
+          <Link href="/services">Browse Services</Link>
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-muted/20 py-8 sm:py-12 border-b border-border/40">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl space-y-8">
-        
+
         {/* Breadcrumb & Header */}
         <div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
@@ -101,7 +123,7 @@ export default function MyOrders() {
                 My Service Bookings
               </h1>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                Track appointments, view invoices, or book repeat services.
+                Track your appointments and manage your bookings.
               </p>
             </div>
 
@@ -117,7 +139,7 @@ export default function MyOrders() {
         {/* Filter Tabs & Search Bar */}
         <div className="rounded-2xl border border-border/80 bg-card p-4 sm:p-5 shadow-xs space-y-4">
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            
+
             {/* Status Filter Tabs */}
             <div className="flex flex-wrap items-center gap-1.5">
               {[
@@ -150,7 +172,7 @@ export default function MyOrders() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 type="text"
-                placeholder="Search by order ID or service..."
+                placeholder="Search by service name or ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-9 pl-9 text-xs"
@@ -162,7 +184,7 @@ export default function MyOrders() {
         {/* Orders List */}
         {filteredOrders.length > 0 ? (
           <div className="space-y-4">
-            {filteredOrders.map((order) => (
+            {filteredOrders.map((order: Order) => (
               <div
                 key={order.id}
                 className="rounded-2xl border border-border/80 bg-card p-5 sm:p-6 shadow-xs transition-all hover:border-primary/40 hover:shadow-sm space-y-4"
@@ -170,12 +192,17 @@ export default function MyOrders() {
                 {/* Order Top Bar: ID, Date, and Status */}
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3 text-xs">
                   <div className="flex items-center gap-3">
-                    <span className="font-bold text-foreground">
-                      #{order.orderNumber}
+                    <span className="font-bold text-foreground font-mono">
+                      #{order.id.slice(0, 8).toUpperCase()}
                     </span>
                     <span className="text-muted-foreground">•</span>
                     <span className="text-muted-foreground">
-                      Booked on {order.bookingDate}
+                      Booked on{" "}
+                      {new Date(order.createdAt).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
                     </span>
                   </div>
 
@@ -184,46 +211,42 @@ export default function MyOrders() {
 
                 {/* Main Order Content */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="relative h-18 w-24 sm:h-20 sm:w-28 shrink-0 overflow-hidden rounded-xl bg-muted border border-border">
-                      <Image
-                        src={order.serviceImage}
-                        alt={order.serviceTitle}
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
+                  <div className="space-y-1">
+                    <h3 className="font-bold text-sm sm:text-base text-foreground leading-snug">
+                      {order.service.title}
+                    </h3>
 
-                    <div className="space-y-1">
-                      <span className="rounded bg-secondary px-2 py-0.5 text-[10px] font-semibold text-secondary-foreground uppercase">
-                        {order.category}
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground pt-0.5">
+                      <span className="flex items-center gap-1 text-foreground font-medium">
+                        <DollarSign className="h-3.5 w-3.5 text-primary" />
+                        ${Number(order.service.price).toFixed(2)}
                       </span>
-                      <h3 className="font-bold text-sm sm:text-base text-foreground leading-snug">
-                        {order.serviceTitle}
-                      </h3>
-
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground pt-0.5">
-                        <span className="flex items-center gap-1 text-foreground font-medium">
-                          <Calendar className="h-3.5 w-3.5 text-primary" />
-                          {order.scheduledDate}
-                        </span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3.5 w-3.5" />
-                          {order.scheduledTimeSlot}
-                        </span>
-                      </div>
+                      <span>•</span>
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5" />
+                        {new Date(order.updatedAt).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" />
+                        {order.service.availability
+                          ? "Service Available"
+                          : "Service Paused"}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Price & Primary CTA */}
+                  {/* Price & CTA */}
                   <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40 gap-3">
                     <div className="text-left sm:text-right">
                       <span className="text-[11px] text-muted-foreground block">
-                        Total Amount
+                        Service Rate
                       </span>
                       <span className="text-base sm:text-lg font-bold text-foreground">
-                        ${order.totalAmount}
+                        ${Number(order.service.price).toFixed(2)}
                       </span>
                     </div>
 
@@ -236,25 +259,6 @@ export default function MyOrders() {
                       </Button>
                     </div>
                   </div>
-                </div>
-
-                {/* Assigned Provider Quick Strip */}
-                <div className="pt-3 border-t border-border/50 flex items-center justify-between text-xs text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-6 w-6 border border-border">
-                      <AvatarImage src={order.provider.avatar} alt={order.provider.name} />
-                      <AvatarFallback className="text-[10px]">
-                        {order.provider.name.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span>
-                      Technician: <strong className="text-foreground">{order.provider.name}</strong>
-                    </span>
-                  </div>
-
-                  <span className="text-[11px]">
-                    Payment: <strong className="text-foreground">{order.paymentMethod}</strong> ({order.paymentStatus})
-                  </span>
                 </div>
               </div>
             ))}

@@ -1,53 +1,41 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useParams } from "next/navigation";
 import {
   Calendar,
-  Clock,
-  MapPin,
-  Phone,
-  Mail,
   ArrowLeft,
   CheckCircle2,
   XCircle,
-  Star,
   AlertCircle,
   HelpCircle,
   Loader2,
+  DollarSign,
+  Briefcase,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import {
-  OrderItem,
-  OrderStatus,
-  getStoredOrderById,
-  cancelStoredOrder,
-  INITIAL_ORDERS,
-} from "@/data/ordersData";
+import { useOrderById, useCancelOrder } from "@/features/orders/hooks/useOrders";
+import { OrderStatus } from "@/features/orders/api/orders.api";
 
 export default function MyOrderDetails() {
   const params = useParams();
   const orderId = params?.orderId as string;
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [order, setOrder] = useState<OrderItem | null>(null);
+  const {
+    data: order,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useOrderById(orderId);
+
+  const { cancelOrder, isPending: isCancelling } = useCancelOrder();
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
 
-  useEffect(() => {
-    if (orderId) {
-      const found =
-        getStoredOrderById(orderId) ||
-        INITIAL_ORDERS.find((o) => o.id === orderId || o.orderNumber === orderId) ||
-        null;
-      setOrder(found);
-    }
-    setIsLoading(false);
-  }, [orderId]);
-
+  // ── Loading ────────────────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center container mx-auto px-4 py-16 text-center">
@@ -57,13 +45,15 @@ export default function MyOrderDetails() {
     );
   }
 
-  if (!order) {
+  // ── Error / Not Found ──────────────────────────────────────────────────────
+  if (isError || !order) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center container mx-auto px-4 py-16 text-center space-y-4">
         <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto" />
         <h2 className="text-2xl font-bold text-foreground">Order Not Found</h2>
         <p className="text-muted-foreground text-sm max-w-sm">
-          We couldn&apos;t locate the order details you requested.
+          {error?.message ||
+            "We couldn't locate the order details you requested."}
         </p>
         <Button asChild>
           <Link href="/account/my-orders">Back to My Orders</Link>
@@ -73,14 +63,16 @@ export default function MyOrderDetails() {
   }
 
   const handleCancel = () => {
-    const success = cancelStoredOrder(order.id);
-    if (success) {
-      setOrder((prev) => (prev ? { ...prev, status: "CANCELLED" } : null));
-      toast.success(`Booking #${order.orderNumber} has been cancelled.`);
-      setIsCancelModalOpen(false);
-    } else {
-      toast.error("Failed to cancel order.");
-    }
+    cancelOrder(order.id, {
+      onSuccess: () => {
+        setIsCancelModalOpen(false);
+        refetch();
+      },
+      onError: () => {
+        toast.error("Failed to cancel order.");
+        setIsCancelModalOpen(false);
+      },
+    });
   };
 
   const getStatusBadge = (status: OrderStatus) => {
@@ -116,18 +108,22 @@ export default function MyOrderDetails() {
     }
   };
 
-  // Stepper calculations
+  // Stepper — only show if not cancelled
   const steps = [
     { label: "Booked", done: true },
-    { label: "Confirmed", done: order.status === "CONFIRMED" || order.status === "COMPLETED" },
-    { label: "In Progress", done: order.status === "CONFIRMED" || order.status === "COMPLETED" },
+    {
+      label: "Confirmed",
+      done: order.status === "CONFIRMED" || order.status === "COMPLETED",
+    },
     { label: "Completed", done: order.status === "COMPLETED" },
   ];
+
+  const canCancel = order.status === "PENDING" || order.status === "CONFIRMED";
 
   return (
     <div className="min-h-screen bg-muted/20 py-8 sm:py-12 border-b border-border/40">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl space-y-8">
-        
+
         {/* Breadcrumbs & Navigation */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -139,7 +135,9 @@ export default function MyOrderDetails() {
               My Orders
             </Link>
             <span>/</span>
-            <span className="text-foreground font-medium">#{order.orderNumber}</span>
+            <span className="text-foreground font-medium font-mono">
+              #{order.id.slice(0, 8).toUpperCase()}
+            </span>
           </div>
 
           <Button asChild variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
@@ -153,21 +151,26 @@ export default function MyOrderDetails() {
         {/* Order Header Card */}
         <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <span className="text-xs text-muted-foreground block">
-              Booking ID: #{order.orderNumber}
+            <span className="text-xs text-muted-foreground block font-mono">
+              Order ID: #{order.id.slice(0, 8).toUpperCase()}
             </span>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground mt-0.5">
-              Service Appointment Details
+              {order.service.title}
             </h1>
             <p className="text-xs text-muted-foreground mt-1">
-              Placed on {order.bookingDate}
+              Placed on{" "}
+              {new Date(order.createdAt).toLocaleDateString("en-US", {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
             </p>
           </div>
 
           <div>{getStatusBadge(order.status)}</div>
         </div>
 
-        {/* Order Stepper (Shown if not cancelled) */}
+        {/* Order Stepper (shown if not cancelled) */}
         {order.status !== "CANCELLED" && (
           <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs">
             <div className="grid grid-cols-4 gap-2 relative">
@@ -197,121 +200,82 @@ export default function MyOrderDetails() {
 
         {/* 2-Column Responsive Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* Left Column (8 cols): Service Info, Provider, Address */}
+
+          {/* Left Column (8 cols): Service Info */}
           <div className="lg:col-span-8 space-y-6">
-            
-            {/* Service Item Summary */}
+
+            {/* Service Summary */}
             <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs space-y-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
                 Service Booked
               </h2>
 
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded-xl bg-muted border border-border">
-                  <Image
-                    src={order.serviceImage}
-                    alt={order.serviceTitle}
-                    fill
-                    className="object-cover"
-                  />
+              <div className="flex items-start gap-4">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-border bg-muted text-muted-foreground">
+                  <Briefcase className="h-8 w-8" />
                 </div>
 
-                <div className="space-y-1">
-                  <span className="rounded bg-secondary px-2 py-0.5 text-[10px] font-semibold text-secondary-foreground uppercase">
-                    {order.category}
-                  </span>
+                <div className="space-y-1.5">
                   <h3 className="font-bold text-base text-foreground">
-                    {order.serviceTitle}
+                    {order.service.title}
                   </h3>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground pt-0.5">
-                    <span className="font-medium text-foreground">${order.price}</span>
+                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
+                    {order.service.description}
+                  </p>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground pt-0.5">
+                    <span className="flex items-center gap-1 font-semibold text-foreground">
+                      <DollarSign className="h-3.5 w-3.5 text-primary" />
+                      ${Number(order.service.price).toFixed(2)}
+                    </span>
                     <span>•</span>
                     <span className="flex items-center gap-1">
                       <Clock className="h-3.5 w-3.5" />
-                      {order.scheduledTimeSlot}
+                      {order.service.availability
+                        ? "Service Available"
+                        : "Service Paused"}
                     </span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Appointment Schedule & Location */}
+            {/* Booking Timeline */}
             <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs space-y-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
-                Appointment & Delivery Address
+                Booking Timeline
               </h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div className="space-y-1">
                   <span className="text-muted-foreground font-medium block">
-                    Scheduled Date & Time
+                    Order Placed
                   </span>
                   <div className="flex items-center gap-2 text-foreground font-semibold text-sm">
                     <Calendar className="h-4 w-4 text-primary" />
-                    <span>{order.scheduledDate}</span>
+                    <span>
+                      {new Date(order.createdAt).toLocaleDateString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </span>
                   </div>
-                  <p className="text-muted-foreground pl-6">
-                    Slot: {order.scheduledTimeSlot}
-                  </p>
                 </div>
 
                 <div className="space-y-1">
                   <span className="text-muted-foreground font-medium block">
-                    Service Address
+                    Last Updated
                   </span>
-                  <div className="flex items-start gap-2 text-foreground font-semibold text-sm">
-                    <MapPin className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                    <span>{order.customer.address}</span>
+                  <div className="flex items-center gap-2 text-foreground font-semibold text-sm">
+                    <Clock className="h-4 w-4 text-primary" />
+                    <span>
+                      {new Date(order.updatedAt).toLocaleDateString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </span>
                   </div>
-                  <p className="text-muted-foreground pl-6">
-                    Contact: {order.customer.phone}
-                  </p>
-                </div>
-              </div>
-
-              {order.customer.notes && (
-                <div className="pt-3 border-t border-border/50 text-xs">
-                  <span className="text-muted-foreground font-medium">Customer Notes: </span>
-                  <span className="text-foreground">{order.customer.notes}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Assigned Provider Information */}
-            <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs space-y-4">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
-                Assigned Service Partner
-              </h2>
-
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3.5">
-                  <Avatar className="h-12 w-12 border border-border">
-                    <AvatarImage src={order.provider.avatar} alt={order.provider.name} />
-                    <AvatarFallback className="font-bold text-xs">
-                      {order.provider.name.slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <h3 className="font-bold text-sm text-foreground">
-                      {order.provider.name}
-                    </h3>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-                      <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                      <span>{order.provider.rating} Rating</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:items-end text-xs text-muted-foreground space-y-1">
-                  <span className="flex items-center gap-1.5">
-                    <Phone className="h-3.5 w-3.5 text-primary" />
-                    {order.provider.phone}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <Mail className="h-3.5 w-3.5 text-primary" />
-                    {order.provider.email}
-                  </span>
                 </div>
               </div>
             </div>
@@ -320,37 +284,31 @@ export default function MyOrderDetails() {
 
           {/* Right Column (4 cols): Billing & Actions */}
           <div className="lg:col-span-4 space-y-6">
-            
+
             {/* Payment Summary Card */}
             <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs space-y-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
-                Payment Summary
+                Order Summary
               </h2>
 
               <div className="space-y-2 text-xs text-muted-foreground border-b border-border/60 pb-4">
                 <div className="flex justify-between">
                   <span>Service Rate</span>
-                  <span className="font-semibold text-foreground">${order.price}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Platform Fee</span>
-                  <span className="font-semibold text-foreground">${order.platformFee}</span>
+                  <span className="font-semibold text-foreground">
+                    ${Number(order.service.price).toFixed(2)}
+                  </span>
                 </div>
                 <div className="flex justify-between pt-2 border-t border-border/40 text-sm font-bold text-foreground">
-                  <span>Total Amount</span>
-                  <span>${order.totalAmount}</span>
+                  <span>Total</span>
+                  <span>${Number(order.service.price).toFixed(2)}</span>
                 </div>
               </div>
 
               <div className="space-y-1.5 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Payment Method:</span>
-                  <span className="font-semibold text-foreground">{order.paymentMethod}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Status:</span>
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                    {order.paymentStatus}
+                  <span className="text-muted-foreground">Order Status:</span>
+                  <span className="font-semibold text-foreground capitalize">
+                    {order.status.replace("_", " ")}
                   </span>
                 </div>
               </div>
@@ -363,11 +321,11 @@ export default function MyOrderDetails() {
                   </Link>
                 </Button>
 
-                {(order.status === "PENDING" || order.status === "CONFIRMED") && (
+                {canCancel && (
                   <Button
                     variant="outline"
                     onClick={() => setIsCancelModalOpen(true)}
-                    className="w-full text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    className="w-full text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
                   >
                     Cancel Booking
                   </Button>
@@ -382,7 +340,7 @@ export default function MyOrderDetails() {
                 <h3>Need Assistance?</h3>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Have questions or need to reschedule? Our customer support is available 24/7.
+                Have questions or need help with your booking? Our customer support is available 24/7.
               </p>
               <div className="pt-1 text-xs text-primary font-medium">
                 support@servicehub.com
@@ -403,19 +361,32 @@ export default function MyOrderDetails() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-foreground">Cancel Booking</h3>
-                  <p className="text-xs text-muted-foreground">Booking #{order.orderNumber}</p>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    #{order.id.slice(0, 8).toUpperCase()}
+                  </p>
                 </div>
               </div>
 
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Are you sure you want to cancel this booking? The assigned technician will be notified immediately.
+                Are you sure you want to cancel this booking? The service provider will be notified immediately.
               </p>
 
               <div className="flex items-center justify-end gap-3 pt-2">
-                <Button variant="outline" onClick={() => setIsCancelModalOpen(false)}>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsCancelModalOpen(false)}
+                  disabled={isCancelling}
+                >
                   Keep Booking
                 </Button>
-                <Button variant="destructive" onClick={handleCancel}>
+                <Button
+                  variant="destructive"
+                  onClick={handleCancel}
+                  disabled={isCancelling}
+                >
+                  {isCancelling && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
                   Yes, Cancel Booking
                 </Button>
               </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -12,6 +12,8 @@ import {
   LogOut,
   ArrowRight,
   Sparkles,
+  User,
+  ShoppingBag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -36,10 +38,30 @@ export default function Navbar() {
   const { data: session, status } = useSession();
   const { logout } = useLogout();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   const isAuthenticated = status === "authenticated";
   const user = session?.user;
   const isProvider = user?.role?.toUpperCase() === "PROVIDER";
+
+  // Close popover when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(event.target as Node)
+      ) {
+        setPopoverOpen(false);
+      }
+    }
+    if (popoverOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [popoverOpen]);
 
   const getInitials = (name?: string | null) => {
     if (!name) return "U";
@@ -104,27 +126,75 @@ export default function Navbar() {
                 </Button>
               )}
 
-              {/* User Avatar & Logout */}
-              <div className="flex items-center gap-2 border-l border-border pl-3">
-                <Avatar className="h-8 w-8 border border-border">
-                  <AvatarImage
-                    src={user?.image || user?.profileImage || undefined}
-                    alt={user?.name || "User"}
-                  />
-                  <AvatarFallback className="text-xs font-semibold">
-                    {getInitials(user?.name || user?.email)}
-                  </AvatarFallback>
-                </Avatar>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => logout("/")}
-                  title="Sign out"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              {/* User Avatar Popover */}
+              <div
+                ref={popoverRef}
+                className="relative flex items-center border-l border-border pl-3"
+              >
+                <button
+                  onClick={() => setPopoverOpen((prev) => !prev)}
+                  className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  aria-label="Open user menu"
+                  type="button"
                 >
-                  <LogOut className="h-4 w-4" />
-                  <span className="sr-only">Sign out</span>
-                </Button>
+                  <Avatar className="h-8 w-8 border border-border cursor-pointer hover:opacity-80 transition-opacity">
+                    <AvatarImage
+                      src={user?.image || user?.profileImage || undefined}
+                      alt={user?.name || "User"}
+                    />
+                    <AvatarFallback className="text-xs font-semibold">
+                      {getInitials(user?.name || user?.email)}
+                    </AvatarFallback>
+                  </Avatar>
+                </button>
+
+                {/* Dropdown Panel */}
+                {popoverOpen && (
+                  <div className="absolute right-0 top-10 z-50 w-48 rounded-lg border border-border bg-background shadow-lg py-1">
+                    {/* User info */}
+                    <div className="px-4 py-2 border-b border-border">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {user?.name || "Welcome"}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {user?.email}
+                      </p>
+                    </div>
+
+                    {/* Menu items */}
+                    <Link
+                      href="/account/profile"
+                      onClick={() => setPopoverOpen(false)}
+                      className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                    >
+                      <User className="h-4 w-4 text-muted-foreground" />
+                      Profile
+                    </Link>
+
+                    <Link
+                      href="/account/my-orders"
+                      onClick={() => setPopoverOpen(false)}
+                      className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                    >
+                      <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+                      My Orders
+                    </Link>
+
+                    <div className="border-t border-border mt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPopoverOpen(false);
+                          logout("/");
+                        }}
+                        className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Sign Out
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -227,6 +297,24 @@ export default function Navbar() {
                         </Button>
                       </SheetClose>
                     )}
+
+                    <SheetClose asChild>
+                      <Button asChild variant="ghost" className="w-full justify-start gap-2">
+                        <Link href="/account/profile">
+                          <User className="h-4 w-4" />
+                          Profile
+                        </Link>
+                      </Button>
+                    </SheetClose>
+
+                    <SheetClose asChild>
+                      <Button asChild variant="ghost" className="w-full justify-start gap-2">
+                        <Link href="/account/my-orders">
+                          <ShoppingBag className="h-4 w-4" />
+                          My Orders
+                        </Link>
+                      </Button>
+                    </SheetClose>
 
                     <Button
                       variant="destructive"

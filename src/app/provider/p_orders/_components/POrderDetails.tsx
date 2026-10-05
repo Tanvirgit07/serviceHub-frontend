@@ -1,26 +1,22 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useParams, useSearchParams } from "next/navigation";
 import {
-  Calendar,
-  Clock,
-  MapPin,
-  Phone,
+  Mail,
   ArrowLeft,
   CheckCircle2,
   XCircle,
   AlertCircle,
   Check,
   X,
-  CreditCard,
   Printer,
   Sparkles,
   ShieldCheck,
-  FileText,
   ExternalLink,
+  Briefcase,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -32,15 +28,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
 import {
-  OrderItem,
-  OrderStatus,
-  getStoredOrderById,
-  getStoredOrders,
-  updateStoredOrderStatus,
-  INITIAL_ORDERS,
-} from "@/data/ordersData";
+  useOrderById,
+  useUpdateOrderStatus,
+} from "@/features/orders/hooks/useOrders";
+import { OrderStatus } from "@/features/orders/api/orders.api";
 
 interface POrderDetailsProps {
   orderId?: string;
@@ -59,55 +51,40 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
     searchParams?.get("orderId") ||
     "";
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [order, setOrder] = useState<OrderItem | null>(null);
+  const {
+    data: order,
+    isLoading,
+    isError,
+    error,
+  } = useOrderById(resolvedId);
 
-  // Private job notes
+  const { updateOrderStatus, isPending: isUpdating } = useUpdateOrderStatus();
+
+  // Private job notes (local state)
   const [workNotes, setWorkNotes] = useState("");
-  const [isSavingNotes, setIsSavingNotes] = useState(false);
 
   // Cancel dialog
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
 
-  useEffect(() => {
-    let targetId = resolvedId;
-
-    // Fallback to first available order if no ID specified
-    if (!targetId) {
-      const allOrders = getStoredOrders();
-      if (allOrders.length > 0) {
-        targetId = allOrders[0].id;
-      }
-    }
-
-    if (targetId) {
-      const found =
-        getStoredOrderById(targetId) ||
-        INITIAL_ORDERS.find((o) => o.id === targetId || o.orderNumber === targetId) ||
-        null;
-      setOrder(found);
-    }
-    setIsLoading(false);
-  }, [resolvedId]);
-
   if (isLoading) {
     return (
-      <div className="py-20 text-center space-y-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto" />
+      <div className="py-24 text-center space-y-3">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
         <p className="text-xs text-muted-foreground">Loading booking details...</p>
       </div>
     );
   }
 
-  if (!order) {
+  if (isError || !order) {
     return (
       <div className="py-20 text-center space-y-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted mx-auto text-muted-foreground">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-destructive/10 text-destructive mx-auto">
           <AlertCircle className="h-6 w-6" />
         </div>
         <h2 className="text-xl font-bold text-foreground">Booking Not Found</h2>
         <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-          The requested service order could not be located in your bookings list.
+          {error?.message ||
+            "The requested service order could not be located."}
         </p>
         <Button asChild size="sm">
           <Link href="/provider/p_orders">Back to Bookings</Link>
@@ -118,33 +95,16 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
 
   // Update order status handler
   const handleStatusChange = (newStatus: OrderStatus) => {
-    const updated = updateStoredOrderStatus(order.id, newStatus);
-    if (updated) {
-      setOrder((prev) => (prev ? { ...prev, status: newStatus } : null));
-
-      const statusLabels: Record<OrderStatus, string> = {
-        CONFIRMED: "Booking Confirmed & Scheduled",
-        COMPLETED: "Service Marked as Completed",
-        CANCELLED: "Booking Cancelled",
-        PENDING: "Set to Pending",
-      };
-
-      toast.success(statusLabels[newStatus]);
-      if (newStatus === "CANCELLED") {
-        setIsCancelModalOpen(false);
+    updateOrderStatus(
+      { id: order.id, payload: { status: newStatus } },
+      {
+        onSuccess: () => {
+          if (newStatus === "CANCELLED") {
+            setIsCancelModalOpen(false);
+          }
+        },
       }
-    } else {
-      toast.error("Failed to update booking status.");
-    }
-  };
-
-  // Save work notes handler
-  const handleSaveNotes = () => {
-    setIsSavingNotes(true);
-    setTimeout(() => {
-      setIsSavingNotes(false);
-      toast.success("Job execution notes saved.");
-    }, 400);
+    );
   };
 
   // Print invoice / job sheet
@@ -157,13 +117,6 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
   // Status badge styling
   const renderStatusBadge = (status: OrderStatus) => {
     switch (status) {
-      case "CONFIRMED":
-        return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            Confirmed & Scheduled
-          </span>
-        );
       case "PENDING":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
@@ -171,11 +124,18 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
             Pending Action
           </span>
         );
-      case "COMPLETED":
+      case "CONFIRMED":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-600 dark:text-blue-400">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            Completed & Verified
+            Confirmed
+          </span>
+        );
+      case "COMPLETED":
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Completed
           </span>
         );
       case "CANCELLED":
@@ -190,38 +150,49 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
     }
   };
 
-  // Progress Stepper steps calculation
+  // Progress Stepper calculation
   const getStepState = (stepNumber: number) => {
     if (order.status === "CANCELLED") {
       return stepNumber === 1 ? "completed" : "cancelled";
     }
     if (order.status === "COMPLETED") return "completed";
     if (order.status === "CONFIRMED") {
-      if (stepNumber <= 2) return "completed";
-      if (stepNumber === 3) return "current";
+      if (stepNumber === 1) return "completed";
+      if (stepNumber === 2) return "current";
       return "pending";
     }
     // PENDING
-    if (stepNumber === 1) return "completed";
-    if (stepNumber === 2) return "current";
+    if (stepNumber === 1) return "current";
     return "pending";
   };
 
-  const customerInitials = order.customer.name
+  const customerName = order.customer?.name || "Customer";
+  const customerInitials = customerName
     .split(" ")
     .map((n) => n[0])
     .join("")
     .toUpperCase()
     .slice(0, 2);
 
+  const formattedPrice = Number(order.service?.price || 0).toFixed(2);
+  const formattedDate = new Date(order.createdAt).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+
   return (
     <div className="p-6">
       <div className="mx-auto max-w-6xl space-y-6">
-        
         {/* Top Breadcrumb & Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/60 pb-5">
           <div className="flex items-center gap-3">
-            <Button asChild variant="outline" size="sm" className="h-9 gap-1.5 text-xs rounded-xl">
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 text-xs rounded-xl"
+            >
               <Link href="/provider/p_orders">
                 <ArrowLeft className="h-3.5 w-3.5" />
                 <span>All Bookings</span>
@@ -230,7 +201,7 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>/</span>
               <span className="font-mono font-bold text-foreground">
-                {order.orderNumber}
+                #{order.id.slice(0, 8).toUpperCase()}
               </span>
             </div>
           </div>
@@ -241,6 +212,7 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
               <>
                 <Button
                   size="sm"
+                  disabled={isUpdating}
                   onClick={() => handleStatusChange("CONFIRMED")}
                   className="h-9 px-3.5 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-2xs"
                 >
@@ -250,6 +222,7 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
                 <Button
                   variant="outline"
                   size="sm"
+                  disabled={isUpdating}
                   onClick={() => setIsCancelModalOpen(true)}
                   className="h-9 px-3 text-xs rounded-xl text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 border-rose-200"
                 >
@@ -260,28 +233,43 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
             )}
 
             {order.status === "CONFIRMED" && (
-              <Button
-                size="sm"
-                onClick={() => handleStatusChange("COMPLETED")}
-                className="h-9 px-3.5 text-xs rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5 shadow-2xs"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>Mark as Completed</span>
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  disabled={isUpdating}
+                  onClick={() => handleStatusChange("COMPLETED")}
+                  className="h-9 px-3.5 text-xs rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5 shadow-2xs"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>Mark as Completed</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isUpdating}
+                  onClick={() => setIsCancelModalOpen(true)}
+                  className="h-9 px-3 text-xs rounded-xl text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 border-rose-200"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  <span>Cancel Booking</span>
+                </Button>
+              </>
             )}
 
-            {/* Direct Call Button */}
-            <Button
-              asChild
-              variant="outline"
-              size="sm"
-              className="h-9 gap-1.5 text-xs rounded-xl text-foreground"
-            >
-              <a href={`tel:${order.customer.phone}`}>
-                <Phone className="h-3.5 w-3.5 text-primary" />
-                <span>Call Client</span>
-              </a>
-            </Button>
+            {/* Direct Email Link */}
+            {order.customer?.email && (
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-9 gap-1.5 text-xs rounded-xl text-foreground"
+              >
+                <a href={`mailto:${order.customer.email}`}>
+                  <Mail className="h-3.5 w-3.5 text-primary" />
+                  <span>Email Client</span>
+                </a>
+              </Button>
+            )}
 
             {/* Print / Job Sheet */}
             <Button
@@ -302,15 +290,12 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-base font-extrabold text-foreground">
-                  {order.orderNumber}
-                </span>
-                <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-bold text-foreground uppercase tracking-wide">
-                  {order.category}
+                  #{order.id.slice(0, 8).toUpperCase()}
                 </span>
                 {renderStatusBadge(order.status)}
               </div>
               <p className="text-xs text-muted-foreground">
-                Booking placed on <strong>{order.bookingDate}</strong> via {order.paymentMethod}
+                Booking placed on <strong>{formattedDate}</strong>
               </p>
             </div>
 
@@ -319,15 +304,14 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
                 Total Job Value
               </span>
               <span className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
-                ${order.totalAmount}
+                ${formattedPrice}
               </span>
             </div>
           </div>
 
-          {/* 4-Step Execution Stepper */}
+          {/* 3-Step Execution Stepper */}
           <div className="border-t border-border/60 pt-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              
+            <div className="grid grid-cols-3 gap-4">
               {/* Step 1 */}
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
@@ -339,7 +323,7 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
                   </span>
                 </div>
                 <p className="text-[11px] text-muted-foreground pl-8">
-                  {order.bookingDate}
+                  {formattedDate}
                 </p>
               </div>
 
@@ -351,7 +335,7 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
                       getStepState(2) === "completed"
                         ? "bg-emerald-500 text-white"
                         : getStepState(2) === "current"
-                        ? "bg-amber-500 text-white ring-4 ring-amber-500/20"
+                        ? "bg-blue-500 text-white ring-4 ring-blue-500/20"
                         : "bg-muted text-muted-foreground"
                     }`}
                   >
@@ -370,7 +354,7 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
                     ? "Pending acceptance"
                     : order.status === "CANCELLED"
                     ? "Declined"
-                    : "Confirmed & locked"}
+                    : "Confirmed"}
                 </p>
               </div>
 
@@ -381,8 +365,6 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
                     className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold shadow-xs ${
                       getStepState(3) === "completed"
                         ? "bg-emerald-500 text-white"
-                        : getStepState(3) === "current"
-                        ? "bg-primary text-primary-foreground ring-4 ring-primary/20"
                         : "bg-muted text-muted-foreground"
                     }`}
                   >
@@ -393,56 +375,35 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
                     )}
                   </div>
                   <span className="text-xs font-bold text-foreground">
-                    3. Scheduled Job
+                    3. Job Completed
                   </span>
                 </div>
                 <p className="text-[11px] text-muted-foreground pl-8">
-                  {order.scheduledDate}
+                  {order.status === "COMPLETED"
+                    ? "Verified & closed"
+                    : "Not yet finished"}
                 </p>
               </div>
-
-              {/* Step 4 */}
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold shadow-xs ${
-                      getStepState(4) === "completed"
-                        ? "bg-emerald-500 text-white"
-                        : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {getStepState(4) === "completed" ? (
-                      <Check className="h-3.5 w-3.5" />
-                    ) : (
-                      "4"
-                    )}
-                  </div>
-                  <span className="text-xs font-bold text-foreground">
-                    4. Job Completed
-                  </span>
-                </div>
-                <p className="text-[11px] text-muted-foreground pl-8">
-                  {order.status === "COMPLETED" ? "Verified & closed" : "Awaiting execution"}
-                </p>
-              </div>
-
             </div>
           </div>
         </div>
 
         {/* 2-Column Main Content Section */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          
           {/* Left Column: Service Details & Job Log (7 cols) */}
           <div className="lg:col-span-7 space-y-6">
-            
             {/* Service Offering Card */}
             <div className="rounded-2xl border border-border/80 bg-card p-5 sm:p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-border/60 pb-3">
                 <h3 className="text-sm font-bold text-foreground">
                   Ordered Service Specifications
                 </h3>
-                <Button asChild variant="ghost" size="sm" className="h-8 gap-1 text-xs">
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1 text-xs"
+                >
                   <Link href={`/provider/p_services/${order.serviceId}`}>
                     <span>View Listing</span>
                     <ExternalLink className="h-3 w-3" />
@@ -451,50 +412,23 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
               </div>
 
               <div className="flex items-start gap-4">
-                <div className="relative h-20 w-20 sm:h-24 sm:w-24 shrink-0 overflow-hidden rounded-xl border border-border bg-muted">
-                  <Image
-                    src={order.serviceImage}
-                    alt={order.serviceTitle}
-                    fill
-                    className="object-cover"
-                  />
+                <div className="flex h-16 w-16 sm:h-20 sm:w-20 shrink-0 items-center justify-center rounded-xl border border-border bg-muted/60 text-primary">
+                  <Briefcase className="h-8 w-8" />
                 </div>
 
                 <div className="space-y-1.5 min-w-0">
                   <h4 className="text-base font-bold text-foreground">
-                    {order.serviceTitle}
+                    {order.service?.title}
                   </h4>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span className="rounded bg-muted px-2 py-0.5 font-medium text-foreground">
-                      {order.category}
-                    </span>
-                    <span>•</span>
-                    <span>Standard Labor & Testing Included</span>
-                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">
+                    {order.service?.description}
+                  </p>
                   <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-semibold pt-1">
                     <ShieldCheck className="h-3.5 w-3.5" />
-                    <span>Backed by 30-Day ServiceHub Warranty</span>
+                    <span>Backed by ServiceHub Quality Guarantee</span>
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Customer Instructions & Notes */}
-            <div className="rounded-2xl border border-border/80 bg-card p-5 sm:p-6 shadow-xs space-y-3">
-              <div className="flex items-center gap-2 text-foreground font-bold text-sm border-b border-border/60 pb-3">
-                <FileText className="h-4 w-4 text-primary" />
-                <span>Customer Special Instructions</span>
-              </div>
-
-              {order.customer.notes ? (
-                <div className="rounded-xl border border-border/60 bg-muted/20 p-4 text-xs text-foreground leading-relaxed italic">
-                  &quot;{order.customer.notes}&quot;
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  No special instructions provided by the customer for this appointment.
-                </p>
-              )}
             </div>
 
             {/* Provider Private Work Log / Execution Notes */}
@@ -504,7 +438,9 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
                   <Sparkles className="h-4 w-4 text-primary" />
                   <span>Technician Job Log & Notes</span>
                 </div>
-                <span className="text-[11px] text-muted-foreground">Internal provider view only</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Internal provider view only
+                </span>
               </div>
 
               <textarea
@@ -514,29 +450,16 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
                 onChange={(e) => setWorkNotes(e.target.value)}
                 className="w-full rounded-xl border border-border/70 bg-muted/20 p-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               />
-
-              <div className="flex justify-end pt-1">
-                <Button
-                  size="sm"
-                  onClick={handleSaveNotes}
-                  disabled={isSavingNotes || !workNotes.trim()}
-                  className="h-8 text-xs rounded-xl"
-                >
-                  {isSavingNotes ? "Saving..." : "Save Job Notes"}
-                </Button>
-              </div>
             </div>
-
           </div>
 
           {/* Right Column: Customer Profile & Financials (5 cols) */}
           <div className="lg:col-span-5 space-y-6">
-            
-            {/* Customer Profile & Address Card */}
+            {/* Customer Profile Card */}
             <div className="rounded-2xl border border-border/80 bg-card p-5 sm:p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-border/60 pb-3">
                 <h3 className="text-sm font-bold text-foreground">
-                  Customer & Job Location
+                  Customer Information
                 </h3>
                 <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
                   Verified Client
@@ -551,7 +474,7 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
                 </Avatar>
                 <div>
                   <h4 className="font-bold text-foreground text-sm">
-                    {order.customer.name}
+                    {customerName}
                   </h4>
                   <p className="text-xs text-muted-foreground">
                     Registered ServiceHub Customer
@@ -560,116 +483,47 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
               </div>
 
               <div className="space-y-2.5 pt-2 border-t border-border/50 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground flex items-center gap-1.5">
-                    <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-                    Phone:
-                  </span>
-                  <a
-                    href={`tel:${order.customer.phone}`}
-                    className="font-semibold text-primary hover:underline"
-                  >
-                    {order.customer.phone}
-                  </a>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-muted-foreground flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                    Service Address:
-                  </span>
-                  <p className="font-medium text-foreground pl-5 leading-relaxed">
-                    {order.customer.address}
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-xs rounded-xl h-8 gap-1.5"
-                >
-                  <a
-                    href={`https://maps.google.com/?q=${encodeURIComponent(order.customer.address)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <MapPin className="h-3.5 w-3.5 text-primary" />
-                    <span>Open in Google Maps</span>
-                    <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
-                  </a>
-                </Button>
-              </div>
-            </div>
-
-            {/* Appointment Schedule Card */}
-            <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-xs space-y-3">
-              <h3 className="text-sm font-bold text-foreground border-b border-border/60 pb-2.5">
-                Appointment Schedule
-              </h3>
-
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="rounded-xl bg-muted/30 p-3 space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                    <Calendar className="h-3 w-3 text-primary" />
-                    Date
-                  </span>
-                  <p className="font-bold text-foreground">
-                    {order.scheduledDate}
-                  </p>
-                </div>
-
-                <div className="rounded-xl bg-muted/30 p-3 space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                    <Clock className="h-3 w-3 text-primary" />
-                    Time Slot
-                  </span>
-                  <p className="font-bold text-foreground">
-                    {order.scheduledTimeSlot}
-                  </p>
-                </div>
+                {order.customer?.email && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                      Email:
+                    </span>
+                    <a
+                      href={`mailto:${order.customer.email}`}
+                      className="font-semibold text-primary hover:underline"
+                    >
+                      {order.customer.email}
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Financial Breakdown & Settlement */}
             <div className="rounded-2xl border border-border/80 bg-card p-5 sm:p-6 shadow-xs space-y-3">
               <h3 className="text-sm font-bold text-foreground border-b border-border/60 pb-2.5">
-                Financial & Payment Summary
+                Financial Summary
               </h3>
 
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Base Labor / Service</span>
-                  <span className="font-semibold text-foreground">${order.price}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>ServiceHub Platform Fee</span>
-                  <span className="font-semibold text-foreground">${order.platformFee}</span>
+                  <span>Base Service Rate</span>
+                  <span className="font-semibold text-foreground">
+                    ${formattedPrice}
+                  </span>
                 </div>
                 <div className="border-t border-border/60 pt-2 flex justify-between font-extrabold text-foreground text-sm">
-                  <span>Total Customer Paid</span>
-                  <span>${order.totalAmount}</span>
-                </div>
-                <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold pt-1">
-                  <span>Provider Net Payout</span>
-                  <span>${order.price}</span>
+                  <span>Total Amount</span>
+                  <span>${formattedPrice}</span>
                 </div>
               </div>
 
               <div className="rounded-xl bg-muted/30 p-3 text-[11px] space-y-1 border border-border/50">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Payment Method:</span>
-                  <span className="font-semibold text-foreground flex items-center gap-1">
-                    <CreditCard className="h-3 w-3 text-primary" />
-                    {order.paymentMethod}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Settlement Status:</span>
+                  <span className="text-muted-foreground">Payment Status:</span>
                   <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                    {order.paymentStatus}
+                    Pay upon completion
                   </span>
                 </div>
               </div>
@@ -681,46 +535,40 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
                 Update Order Lifecycle
               </h3>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-3 gap-2 text-xs">
                 <Button
                   size="sm"
+                  disabled={isUpdating}
                   variant={order.status === "CONFIRMED" ? "default" : "outline"}
                   onClick={() => handleStatusChange("CONFIRMED")}
                   className="rounded-xl h-8"
                 >
-                  Confirm Job
+                  Confirm
                 </Button>
                 <Button
                   size="sm"
+                  disabled={isUpdating}
                   variant={order.status === "COMPLETED" ? "default" : "outline"}
                   onClick={() => handleStatusChange("COMPLETED")}
                   className="rounded-xl h-8"
                 >
-                  Complete Job
+                  Complete
                 </Button>
                 <Button
                   size="sm"
-                  variant={order.status === "PENDING" ? "default" : "outline"}
-                  onClick={() => handleStatusChange("PENDING")}
-                  className="rounded-xl h-8"
-                >
-                  Set Pending
-                </Button>
-                <Button
-                  size="sm"
-                  variant={order.status === "CANCELLED" ? "destructive" : "outline"}
+                  disabled={isUpdating}
+                  variant={
+                    order.status === "CANCELLED" ? "destructive" : "outline"
+                  }
                   onClick={() => setIsCancelModalOpen(true)}
                   className="rounded-xl h-8 text-rose-600 border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/30"
                 >
-                  Cancel / Decline
+                  Cancel
                 </Button>
               </div>
             </div>
-
           </div>
-
         </div>
-
       </div>
 
       {/* Cancel Confirmation Dialog */}
@@ -730,9 +578,13 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10 text-destructive mb-2">
               <XCircle className="h-5 w-5" />
             </div>
-            <DialogTitle className="text-base font-bold">Decline / Cancel Booking</DialogTitle>
+            <DialogTitle className="text-base font-bold">
+              Decline / Cancel Booking
+            </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Are you sure you want to cancel booking #{order.orderNumber}? The customer will be notified and any pre-authorizations will be refunded.
+              Are you sure you want to cancel booking #
+              {order.id.slice(0, 8).toUpperCase()}? The customer will be
+              notified immediately.
             </DialogDescription>
           </DialogHeader>
 
@@ -740,6 +592,7 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
             <Button
               variant="outline"
               size="sm"
+              disabled={isUpdating}
               onClick={() => setIsCancelModalOpen(false)}
               className="text-xs rounded-xl"
             >
@@ -748,15 +601,16 @@ export default function POrderDetails({ orderId: propId }: POrderDetailsProps) {
             <Button
               variant="destructive"
               size="sm"
+              disabled={isUpdating}
               onClick={() => handleStatusChange("CANCELLED")}
               className="text-xs rounded-xl"
             >
+              {isUpdating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirm Cancellation
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </div>
   );
 }
